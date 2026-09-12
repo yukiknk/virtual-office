@@ -1,4 +1,6 @@
 {
+  // ── 本番（トップレベル） ──
+  // デプロイ: npm run deploy        → virtual-office
   "name": "virtual-office",
   "main": "src/index.js",
   "compatibility_date": "2026-08-01",
@@ -31,5 +33,33 @@
         "Room"
       ]
     }
-  ]
+  ],
+
+  // ── ベータ（テスト環境） ──
+  // デプロイ: npm run deploy:beta   → virtual-office-beta
+  // 本番とは別の Worker・別の KV・別の Durable Object になるため、
+  // ここで何をしても本番のデータには一切触れません。
+  //
+  // バインディング（kv_namespaces / durable_objects）と vars・secrets は
+  // トップレベルから継承されないため、環境ごとに書き直す必要があります。
+  // main / assets / compatibility_date / migrations は継承されます。
+  "env": {
+    "beta": {
+      "kv_namespaces": [
+        {
+          "binding": "LAYOUT_KV",
+          // ↓ `npm run kv:create-beta` で作った id に差し替えてください
+          "id": "PASTE_BETA_KV_NAMESPACE_ID_HERE"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "ROOM",
+            "class_name": "Room"
+          }
+        ]
+      }
+    }
+  }
 }

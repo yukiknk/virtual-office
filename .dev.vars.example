@@ -1,0 +1,10 @@
+# ローカル開発（wrangler dev）で使うシークレットのひな形。
+# このファイルを `.dev.vars` にコピーして、実際の値を入れてください。
+# `.dev.vars` は .gitignore 済みです。コミットしないでください。
+#
+# 値は Cloudflare ダッシュボード → Realtime（Calls）→ 対象アプリ から取得します。
+# 本番にデプロイ済みのシークレットは Cloudflare 側でも読み出せないため、
+# 作成時に控えた値、またはアプリ側で再発行した値を使ってください。
+
+REALTIME_APP_ID=""
+REALTIME_APP_SECRET=""

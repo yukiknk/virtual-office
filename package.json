@@ -1,0 +1,21 @@
+{
+  "name": "virtual-office",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:beta": "wrangler dev --env beta",
+    "deploy": "wrangler deploy",
+    "deploy:beta": "wrangler deploy --env beta",
+    "tail": "wrangler tail",
+    "tail:beta": "wrangler tail --env beta",
+    "kv:create-beta": "wrangler kv namespace create LAYOUT_KV --env beta",
+    "kv:copy-to-beta": "node scripts/copy-kv-to-beta.mjs",
+    "secret:beta": "wrangler secret put --env beta",
+    "avatar-manifest": "node scripts/gen-avatar-manifest.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.131.1"
+  }
+}
