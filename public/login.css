@@ -484,6 +484,17 @@ body::before {
 	color: var(--muted);
 }
 
+/* 素材クレジットへの導線（表示義務のため、アプリからも辿れるようにする） */
+.page-foot {
+	margin-top: 20px;
+	text-align: center;
+	font-size: 12px;
+}
+
+.page-foot a {
+	color: var(--muted);
+}
+
 /* フォーカスの見やすさ */
 :focus-visible {
 	outline: 2px solid var(--accent);
