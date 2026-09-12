@@ -16,34 +16,64 @@ function ctx() {
 	return audioCtx;
 }
 
-// 「ピッ・ピッ」を2回。矩形波だと耳に刺さるので三角波にし、
-// 音の切れ目でプツッと鳴らないよう音量に傾斜をつける。
+// ── 呼び鈴メロディ ──
+// 作業に集中していても気づけるよう、短い電子音ではなく音程の動くメロディにしている。
+// 同じ音が続くと背景音として聞き流されるため、上がって下りる音列にした。
+// 最後が低い音で終わるので、気づかせつつ急かさない。
+
+// ベルらしい響き。倍音を整数倍からわずかにずらすと金属的になりすぎない。
+const BELL = [[2.01, 0.11], [3.02, 0.05]];
+
+// G5 → C6 → D6 → C6 → G5（平均律）
+const MELODY = [
+	{ at: 0.00, hz: 783.99, dur: 0.8, attack: 0.030, peak: 0.14 },
+	{ at: 0.38, hz: 1046.50, dur: 0.8, attack: 0.030, peak: 0.14 },
+	{ at: 0.76, hz: 1174.66, dur: 0.9, attack: 0.030, peak: 0.14 },
+	{ at: 1.14, hz: 1046.50, dur: 0.9, attack: 0.030, peak: 0.14 },
+	{ at: 1.52, hz: 783.99, dur: 1.5, attack: 0.035, peak: 0.15 },
+];
+const MELODY_SPAN = 1.85;   // メロディ本体の長さ（余韻は含めない）
+const REPEAT_GAP = 0.8;     // 1回目と2回目のあいだ
+const REPEAT = 2;           // 1回目を聞き逃しても2回目で気づけるように
+
+// 全体の音量。試聴ページの既定（60%）と同じ大きさに揃えている。
+const VOLUME = 0.6;
+
+// 1音を鳴らす。立ち上がりに傾斜をつけて出だしの角を取り、
+// 減衰は指数的にして自然に消えるようにする。
+function tone(ac, n, startAt) {
+	const t0 = startAt + n.at;
+	const peak = n.peak * VOLUME;
+	const master = ac.createGain();
+	master.gain.setValueAtTime(0.0001, t0);
+	master.gain.linearRampToValueAtTime(peak, t0 + n.attack);
+	master.gain.exponentialRampToValueAtTime(0.0001, t0 + n.dur);
+	master.connect(ac.destination);
+
+	const add = (hz, g) => {
+		const osc = ac.createOscillator();
+		const gain = ac.createGain();
+		osc.type = "sine";
+		osc.frequency.value = hz;
+		gain.gain.value = g;
+		osc.connect(gain).connect(master);
+		osc.start(t0);
+		osc.stop(t0 + n.dur + 0.08);
+	};
+	add(n.hz, 1);
+	for (const [mult, g] of BELL) add(n.hz * mult, g);
+}
+
 export function playAlarm() {
 	const ac = ctx();
 	if (!ac) return;
-	const start = ac.currentTime;
-	const beeps = [
-		{ at: 0.00, hz: 880 },
-		{ at: 0.18, hz: 1175 },
-		{ at: 0.50, hz: 880 },
-		{ at: 0.68, hz: 1175 },
-	];
-	for (const b of beeps) {
-		try {
-			const osc = ac.createOscillator();
-			const gain = ac.createGain();
-			osc.type = "triangle";
-			osc.frequency.value = b.hz;
-			const t0 = start + b.at;
-			gain.gain.setValueAtTime(0, t0);
-			gain.gain.linearRampToValueAtTime(0.18, t0 + 0.01);
-			gain.gain.setValueAtTime(0.18, t0 + 0.11);
-			gain.gain.linearRampToValueAtTime(0, t0 + 0.15);
-			osc.connect(gain).connect(ac.destination);
-			osc.start(t0);
-			osc.stop(t0 + 0.16);
-		} catch { }
-	}
+	try {
+		const base = ac.currentTime;
+		const step = MELODY_SPAN + REPEAT_GAP;
+		for (let i = 0; i < REPEAT; i++) {
+			for (const n of MELODY) tone(ac, n, base + i * step);
+		}
+	} catch { }
 }
 
 // タブが裏にあるときだけ OS の通知を出す。画面を見ているならバナーと音で足りる。
