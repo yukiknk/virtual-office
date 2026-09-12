@@ -1,0 +1,29 @@
+head/faces/${head}/neutral/walk.png
+	- Note: Original by Redshrike, Expressions by ElizaWy, mapped to all frames by JaidynReiman
+	- Licenses:
+		- OGA-BY 3.0
+	- Authors:
+		- JaidynReiman
+		- ElizaWy
+		- Stephen Challener (Redshrike)
+	- Links:
+		- https://github.com/ElizaWy/LPC/tree/main/Characters/Head
+		- https://opengameart.org/content/ulpc-expanded-expressions
+
+legs/pantaloons/male/walk.png
+	- Note: Original bases by Redshrike, thrust/shoot bases by Wulax, Original Pantaloons by Nila122, climb/jump/run/sit/emotes/revised combat by JaidynReiman
+	- Licenses:
+		- OGA-BY 3.0
+		- GPL 2.0
+		- GPL 3.0
+		- CC-BY-SA 3.0
+	- Authors:
+		- Nila122
+		- JaidynReiman
+		- Johannes Sjölund (wulax)
+		- Stephen Challener (Redshrike)
+	- Links:
+		- https://opengameart.org/content/lpc-pirates
+		- https://opengameart.org/content/more-lpc-clothes-and-hair
+		- https://opengameart.org/content/lpc-expanded-pants
+

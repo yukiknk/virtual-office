@@ -1,0 +1,13 @@
+hair/idol/adult/walk.png
+	- Note: Original CC0 by Thecilekli. Edited by bluecarrot16 and ElizaWy. Animated by ElizaWy.
+	- Licenses:
+		- CC0
+	- Authors:
+		- thecilekli
+		- bluecarrot16
+	- Links:
+		- https://opengameart.org/content/lpc-korean-idol-hairstyle-male-with-12-colors
+		- https://opengameart.org/content/lpc-hair
+		- https://github.com/ElizaWy/LPC/tree/main/Characters/Hair
+		- https://opengameart.org/content/lpc-expanded-sit-run-jump-more
+

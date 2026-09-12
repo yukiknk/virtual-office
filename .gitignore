@@ -1,0 +1,18 @@
+# Wrangler のローカル状態・ビルド成果物
+.wrangler/
+
+# 依存
+node_modules/
+
+# ローカル開発用のシークレット（絶対にコミットしない）
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# OS / エディタ
+.DS_Store
+Thumbs.db
+*.swp
+
+# 組織固有の表示設定（公開リポジトリに含めない）
+public/config.local.js

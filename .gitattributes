@@ -1,0 +1,6 @@
+# 改行コードはリポジトリ内で LF に統一する。
+# Windows の core.autocrlf 設定に関係なく、clone 先でも LF になる。
+* text=auto eol=lf
+
+# 画像はバイナリとして扱う（改行変換も差分表示もしない）
+*.png binary

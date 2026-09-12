@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>バーチャルオフィス 管理者ページ</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+	<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700&display=swap" rel="stylesheet" />
+	<link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+	<div id="admin">
+		<!-- メニューバー -->
+		<aside id="rail">
+			<h2>管理モード</h2>
+			<div id="mode-status" class="status idle">編集する対象をタブから選んでください</div>
+
+			<div class="group">
+				<div class="group-label">編集対象</div>
+				<div id="tabs"></div>
+				<div id="current">
+					<span class="clbl">選択中</span>
+					<canvas id="current-preview" width="36" height="36"></canvas>
+				</div>
+			</div>
+
+			<div class="group">
+				<div class="group-label">消しゴム</div>
+				<button type="button" id="erase-tool" class="danger">消去</button>
+			</div>
+
+			<div class="group">
+				<div class="group-label">表示・保存</div>
+				<button type="button" id="showall-tool">全体を表示</button>
+				<button type="button" id="savemode-tool">保存モード：手動</button>
+				<button type="button" id="save-tool">保存</button>
+				<div id="save-state" class="savestate">保存済み</div>
+				<button type="button" id="reflect-tool">利用者に反映</button>
+			</div>
+		</aside>
+
+		<!-- キャンバス -->
+		<section id="stage">
+			<canvas id="plan" width="640" height="480"></canvas>
+			<script type="module" src="admin/main.js"></script>
+		</section>
+	</div>
+
+	<!-- タイル選択モーダル -->
+	<div id="modal">
+		<div class="modal-box">
+			<div class="modal-head">
+				<span id="modal-title"></span>
+				<button type="button" id="modal-close">×</button>
+			</div>
+			<div class="modal-body">
+				<div id="furni-sheets"></div>
+				<canvas id="modal-canvas"></canvas>
+			</div>
+		</div>
+	</div>
+
+	<!-- コメント（看板）設定モーダル -->
+	<div id="comment-modal">
+		<div class="cmodal-box">
+			<div class="cmodal-head">看板の設定</div>
+
+			<label class="cfield">
+				<span class="clabel">テキスト</span>
+				<textarea id="c-text" rows="3" placeholder="文字を入力する"></textarea>
+			</label>
+
+			<div class="crow">
+				<label class="cfield">
+					<span class="clabel">文字サイズ</span>
+					<select id="c-size">
+						<option value="12">小</option>
+						<option value="16" selected>中</option>
+						<option value="22">大</option>
+						<option value="30">特大</option>
+					</select>
+				</label>
+				<label class="cfield">
+					<span class="clabel">文字色</span>
+					<input type="color" id="c-color" value="#141815" />
+				</label>
+				<label class="cfield">
+					<span class="clabel">背景色</span>
+					<input type="color" id="c-bg" value="#ffffff" />
+				</label>
+			</div>
+
+			<div class="crow">
+				<label class="ccheck"><input type="checkbox" id="c-bold" /> 太字</label>
+				<label class="ccheck"><input type="checkbox" id="c-italic" /> 斜体</label>
+			</div>
+
+			<div class="cmodal-foot">
+				<button type="button" id="c-cancel">キャンセル</button>
+				<button type="button" id="c-save" class="primary">保存</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- 家具のリンク設定モーダル -->
+	<div id="furni-modal">
+		<div class="cmodal-box">
+			<div class="cmodal-head">家具のリンク設定</div>
+
+			<label class="cfield">
+				<span class="clabel">名前（ラベル）</span>
+				<input type="text" id="fu-label" placeholder="例：日報フォーム" />
+			</label>
+			<label class="cfield">
+				<span class="clabel">URL</span>
+				<input type="text" id="fu-url" placeholder="https://..." />
+			</label>
+
+			<div class="cmodal-foot">
+				<button type="button" id="fu-clear" class="danger">リンクを削除</button>
+				<button type="button" id="fu-cancel">キャンセル</button>
+				<button type="button" id="fu-save" class="primary">保存</button>
+			</div>
+		</div>
+	</div>
+</body>
+
+</html>

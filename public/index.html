@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title data-config-title="バーチャルオフィス">バーチャルオフィス</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+	<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap" rel="stylesheet" />
+	<link rel="stylesheet" href="login.css" />
+	<script src="config.js"></script>
+	<script src="config.local.js"></script>
+</head>
+
+<body>
+	<div class="page">
+		<header class="brand">
+			<div class="brand-badge" aria-hidden="true">
+				<span></span><span></span><span></span><span></span>
+			</div>
+			<div class="brand-text">
+				<p class="brand-title" data-config="orgName">デモオフィス</p>
+				<p class="brand-sub">バーチャルオフィス</p>
+			</div>
+		</header>
+
+		<main class="cards">
+			<section id="avatar-setup" class="card">
+				<div class="card-head">
+					<h2 class="card-title">アバターを設定</h2>
+					<button type="button" id="av-random" class="ghost-btn">ランダム</button>
+				</div>
+				<div class="av-main">
+					<div class="av-stage">
+						<canvas id="av-preview" width="128" height="128"></canvas>
+					</div>
+					<div id="av-layers"></div>
+				</div>
+				<div id="av-picker" hidden></div>
+			</section>
+
+			<form id="gateform" class="card">
+				<h2 class="card-title">氏名とデバイス</h2>
+
+				<div class="field">
+					<label for="nm">氏名</label>
+					<input id="nm" maxlength="20" autocomplete="off" placeholder="例：山田太郎"
+						data-config-placeholder="namePlaceholder" />
+				</div>
+
+				<div class="field">
+					<label for="mic-select">マイク</label>
+					<select id="mic-select"></select>
+				</div>
+
+				<div class="field">
+					<label for="spk-select">スピーカー</label>
+					<select id="spk-select"></select>
+				</div>
+
+				<p id="dev-note"></p>
+
+				<button type="submit" class="primary-btn">入室する</button>
+				<p class="hint">Enter キーでも入室できます</p>
+			</form>
+		</main>
+	</div>
+
+	<script src="login.js"></script>
+</body>
+
+</html>

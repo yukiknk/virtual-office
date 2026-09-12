@@ -1,0 +1,931 @@
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+}
+
+#admin {
+	display: grid;
+	/* グリッドを有効化 */
+	grid-template-columns: 260px 1fr;
+	/* 左260px・右は残り全部 */
+	height: 100vh;
+}
+
+#rail {
+	border-right: 3px solid #141815;
+	/* 右端に仕切り線 */
+	background: #dfe3dd;
+	padding: 14px;
+	display: flex;
+	flex-direction: column;
+	/* 中身を縦に積む */
+	overflow-y: auto;
+	/* 入りきらないときは縦スクロール */
+	overflow-x: hidden;
+}
+
+#rail h2 {
+	font-size: 15px;
+	font-weight: 800;
+	letter-spacing: 0.02em;
+	color: #141815;
+	margin: 0 0 14px;
+	padding-bottom: 10px;
+	border-bottom: 2px solid #141815;
+}
+
+/* ── オフィスの在室者リスト ── */
+.rail-h {
+	font-size: 12px;
+	letter-spacing: 0.12em;
+	color: #737a70;
+	margin: 0 0 10px;
+}
+
+#roster {
+	max-height: 26%;
+	/* 在室者は控えめに。残りの高さはチャットへ */
+	overflow-y: auto;
+	margin-bottom: 12px;
+}
+
+/* サブ見出し（チャットなど） */
+.rail-sub {
+	font-size: 12px;
+	letter-spacing: 0.12em;
+	color: #737a70;
+	margin: 0 0 8px;
+}
+
+/* チャットの表示欄（新着が上） */
+#chat-log {
+	flex: 1 1 auto;
+	min-height: 60px;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.chat-msg {
+	font-size: 13px;
+	color: #141815;
+	background: #eff1ec;
+	border-radius: 8px;
+	padding: 6px 8px;
+	word-break: break-word;
+}
+
+.chat-msg.self {
+	background: #e2e8fb;
+}
+
+.chat-name {
+	display: block;
+	font-size: 11px;
+	font-weight: 700;
+	color: #737a70;
+	margin-bottom: 2px;
+}
+
+.chat-msg.self .chat-name {
+	color: #1f3fb0;
+}
+
+/* チャット入力（入力欄は全幅、送信は下段） */
+#chat-form {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 12px;
+}
+
+#chat-input {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 9px 10px;
+	border: 1px solid #b4bbb0;
+	border-radius: 8px;
+	font: inherit;
+	font-size: 13px;
+	line-height: 1.4;
+	height: 56px;
+	/* 長い文章は縦スクロール */
+	max-height: 120px;
+	overflow-y: auto;
+	resize: vertical;
+}
+
+#chat-form button {
+	width: 100%;
+	margin: 0;
+	padding: 9px 12px;
+	border: none;
+	border-radius: 8px;
+	background: #1f3fb0;
+	color: #fff;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+/* 会話エリアごとのまとまり */
+.rgroup {
+	margin-bottom: 12px;
+}
+
+.rgroup .rh {
+	font-size: 11px;
+	font-weight: 700;
+	color: #1f3fb0;
+	padding: 4px 6px;
+	background: #e2e8fb;
+	border-radius: 6px;
+	margin-bottom: 4px;
+}
+
+/* エリア外グループの見出しは控えめに */
+.rgroup.free .rh {
+	color: #737a70;
+	background: #ecefe9;
+}
+
+/* 一人分の行 */
+.rperson {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	padding: 4px 6px;
+	font-size: 13px;
+	color: #141815;
+}
+
+.rperson .nm {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* 自分の行はカード風に強調 */
+.rperson.self {
+	font-weight: 700;
+	background: #e2e8fb;
+	border: 1px solid #c3cef4;
+	border-radius: 10px;
+	padding: 6px 8px;
+}
+
+/* 「あなた」バッジは右端に寄せる */
+.rperson .you {
+	margin-left: auto;
+	flex: none;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	background: #1f3fb0;
+	color: #fff;
+	padding: 2px 8px;
+	border-radius: 999px;
+}
+
+.rperson .dot {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: #b23a2a;
+	flex: none;
+}
+
+.rperson.self .dot {
+	background: #1f3fb0;
+}
+
+.rempty {
+	font-size: 12px;
+	color: #9aa096;
+	padding: 4px 6px;
+}
+
+#rail button {
+	display: block;
+	width: 100%;
+	margin-bottom: 6px;
+	padding: 9px 10px;
+	border: 1px solid #b4bbb0;
+	border-radius: 8px;
+	background: #eff1ec;
+	color: #141815;
+	font-size: 13px;
+	cursor: pointer;
+	transition: filter 0.12s, background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+
+#rail button:hover:not(:disabled) {
+	filter: brightness(0.97);
+	border-color: #9aa196;
+}
+
+#rail button:active:not(:disabled) {
+	transform: translateY(1px);
+}
+
+/* 機能グループ（見出し＋区切り） */
+.group {
+	margin-bottom: 16px;
+	padding-bottom: 12px;
+	border-bottom: 1px solid #cdd2c9;
+}
+
+.group-label {
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	color: #737a70;
+	margin: 0 0 6px;
+}
+
+/* 削除系ボタンは赤系で区別 */
+#rail .danger {
+	background: #fbeee9;
+	border-color: #e0a596;
+	color: #b23a2a;
+}
+
+/* 表示・保存グループ */
+#showall-tool.active,
+#savemode-tool.active {
+	background: #1f3fb0;
+	color: #fff;
+	border-color: #1f3fb0;
+}
+
+#reflect-tool {
+	background: #2a7d3f;
+	color: #fff;
+	border-color: #2a7d3f;
+}
+
+.savestate {
+	font-size: 11px;
+	color: #737a70;
+	margin: 2px 0 8px;
+}
+
+.savestate.dirty {
+	color: #b23a2a;
+	font-weight: 700;
+}
+
+#rail button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.tab {
+	display: block;
+	width: 100%;
+	margin-bottom: 6px;
+	padding: 9px 11px;
+	border: 1px solid #b4bbb0;
+	border-radius: 8px;
+	background: #eff1ec;
+	color: #141815;
+	font-size: 13px;
+	cursor: pointer;
+	transition: filter 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.tab:hover {
+	filter: brightness(0.97);
+	border-color: #9aa196;
+}
+
+#tabs .tab.active {
+	background: #1f3fb0;
+	color: #fff;
+	border-color: #1f3fb0;
+	box-shadow: 0 2px 8px rgba(31, 63, 176, 0.3);
+}
+
+#zone-tool.active {
+	background: #1f3fb0;
+	color: #fff;
+	border-color: #1f3fb0;
+}
+
+/* 削除系は選択中も赤 */
+#erase-tool.active,
+#zone-del-tool.active {
+	background: #b23a2a;
+	color: #fff;
+	border-color: #b23a2a;
+}
+
+/* 現在のモード表示 */
+.status {
+	font-size: 12px;
+	font-weight: 700;
+	padding: 8px 10px;
+	border-radius: 8px;
+	margin-bottom: 10px;
+	text-align: center;
+}
+
+.status.place {
+	background: #e2e8fb;
+	color: #1f3fb0;
+}
+
+.status.zone {
+	background: #e2e8fb;
+	color: #1f3fb0;
+}
+
+.status.erase {
+	background: #f5d9d2;
+	color: #b23a2a;
+}
+
+.status.idle {
+	background: #ecefe9;
+	color: #737a70;
+}
+
+#current {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 10px;
+}
+
+#current .clbl {
+	font-size: 11px;
+	color: #737a70;
+}
+
+#current-preview {
+	border: 1px solid #b4bbb0;
+	image-rendering: pixelated;
+	background: #fff;
+}
+
+#modal {
+	display: none;
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.5);
+	z-index: 100;
+	align-items: center;
+	justify-content: center;
+}
+
+#modal.open {
+	display: flex;
+}
+
+.modal-box {
+	background: #fff;
+	border: 2px solid #141815;
+	max-width: 94vw;
+	max-height: 90vh;
+	display: flex;
+	flex-direction: column;
+}
+
+.modal-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 8px 12px;
+	border-bottom: 1px solid #b4bbb0;
+}
+
+.modal-head button {
+	border: none;
+	background: none;
+	font-size: 22px;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.modal-body {
+	overflow: auto;
+	padding: 12px;
+}
+
+#modal-canvas {
+	image-rendering: pixelated;
+	cursor: pointer;
+	display: block;
+}
+
+/* 家具モーダルのシート切替バー */
+#furni-sheets {
+	display: none;
+	gap: 8px;
+	margin-bottom: 10px;
+	flex-wrap: wrap;
+}
+
+.sheet-btn {
+	padding: 7px 14px;
+	border: 1px solid #b4bbb0;
+	border-radius: 8px;
+	background: #eff1ec;
+	font-size: 13px;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.sheet-btn.active {
+	background: #1f3fb0;
+	color: #fff;
+	border-color: #1f3fb0;
+}
+
+#erase-tool.sel {
+	background: #b23a2a;
+	color: #fff;
+	border-color: #b23a2a;
+}
+
+/* ── コメント（看板）設定モーダル ── */
+#comment-modal,
+#furni-modal,
+#away-modal,
+#people-modal {
+	display: none;
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.5);
+	z-index: 200;
+	align-items: center;
+	justify-content: center;
+}
+
+#comment-modal.open,
+#furni-modal.open,
+#away-modal.open,
+#people-modal.open {
+	display: flex;
+}
+
+/* 勤務者一覧 */
+#people-list {
+	max-height: 55vh;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.people-count {
+	font-size: 12px;
+	color: #737a70;
+	margin-bottom: 6px;
+}
+
+.person-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 14px;
+	color: #141815;
+	padding: 6px 8px;
+	border-radius: 8px;
+}
+
+.person-row.self {
+	font-weight: 700;
+	background: #e2e8fb;
+}
+
+.person-row .dot {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: #2a7d3f;
+	flex: none;
+}
+
+.person-row .away-tag {
+	margin-left: auto;
+	font-size: 11px;
+	font-weight: 700;
+	color: #b23a2a;
+}
+
+/* 離席モーダルはステージ部分だけを覆う（左メニューの着席ボタンは押せる） */
+#stage #away-modal {
+	position: absolute;
+	inset: 0;
+	z-index: 40;
+	background: rgba(0, 0, 0, 0.35);
+}
+
+#away-text {
+	width: 100%;
+	box-sizing: border-box;
+	resize: none;
+	padding: 12px 14px;
+	border: 1px solid #b4bbb0;
+	border-radius: 12px;
+	font: inherit;
+	font-size: 15px;
+	line-height: 1.5;
+}
+
+#fu-label,
+#fu-url {
+	width: 100%;
+	padding: 9px 10px;
+	border: 1px solid #b4bbb0;
+	border-radius: 10px;
+	font: inherit;
+	font-size: 14px;
+}
+
+.cmodal-box {
+	background: #fff;
+	border-radius: 14px;
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+	width: min(92vw, 420px);
+	padding: 20px;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.cmodal-head {
+	font-size: 16px;
+	font-weight: 800;
+	color: #141815;
+}
+
+.cfield {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	font-size: 12px;
+	color: #737a70;
+	flex: 1;
+}
+
+.cfield .clabel {
+	font-size: 12px;
+	font-weight: 700;
+	color: #4a5046;
+}
+
+#c-text {
+	width: 100%;
+	resize: vertical;
+	padding: 9px 10px;
+	border: 1px solid #b4bbb0;
+	border-radius: 10px;
+	font: inherit;
+	font-size: 14px;
+}
+
+.cdt {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.cdt select {
+	padding: 8px 6px;
+	border: 1px solid #b4bbb0;
+	border-radius: 8px;
+	background: #fff;
+	font: inherit;
+	font-size: 14px;
+}
+
+.cdt span {
+	font-size: 13px;
+	color: #4a5046;
+	margin-right: 4px;
+}
+
+.cmodal-err {
+	margin: 0;
+	min-height: 1em;
+	font-size: 12px;
+	font-weight: 700;
+	color: #b23a2a;
+}
+
+.cmodal-err:empty {
+	display: none;
+}
+
+.crow {
+	display: flex;
+	gap: 12px;
+	align-items: flex-end;
+}
+
+#c-size {
+	padding: 8px 10px;
+	border: 1px solid #b4bbb0;
+	border-radius: 10px;
+	font-size: 14px;
+	background: #fff;
+}
+
+#c-color,
+#c-bg {
+	width: 100%;
+	height: 38px;
+	padding: 2px;
+	border: 1px solid #b4bbb0;
+	border-radius: 10px;
+	background: #fff;
+	cursor: pointer;
+}
+
+.ccheck {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	color: #141815;
+	cursor: pointer;
+}
+
+.cmodal-foot {
+	display: flex;
+	justify-content: flex-end;
+	gap: 10px;
+	margin-top: 4px;
+}
+
+.cmodal-foot button {
+	padding: 10px 20px;
+	border-radius: 10px;
+	border: 1px solid #b4bbb0;
+	background: #eff1ec;
+	color: #141815;
+	font-size: 14px;
+	font-weight: 700;
+	cursor: pointer;
+	transition: filter 0.12s;
+}
+
+.cmodal-foot button:hover {
+	filter: brightness(0.97);
+}
+
+.cmodal-foot button.primary {
+	background: #1f3fb0;
+	color: #fff;
+	border-color: #1f3fb0;
+}
+
+#stage {
+	padding: 0px;
+	overflow: hidden;
+	/* 余計なスクロールをいれなくする */
+	position: relative;
+	/* 画面共有オーバーレイの基準にする */
+}
+
+#plan {
+	display: block;
+	/* 下にすき間ができるのを防ぐ */
+	touch-action: none;
+}
+
+/* 転送量の警告バナー */
+#banner {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	display: none;
+	z-index: 20;
+	font-size: 12.5px;
+	padding: 9px 14px;
+	background: #f5d9d2;
+	color: #6b271a;
+	border-bottom: 1px solid #e0a596;
+}
+
+/* 画面共有：小さいタイルを並べる（複数同時可）。クリックで拡大。 */
+#shares {
+	position: absolute;
+	right: 12px;
+	bottom: 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	z-index: 15;
+	max-height: 72%;
+	overflow-y: auto;
+}
+
+.screen-tile {
+	width: 220px;
+	aspect-ratio: 16 / 9;
+	object-fit: contain;
+	background: #000;
+	border: 2px solid #1f3fb0;
+	border-radius: 8px;
+	cursor: zoom-in;
+	box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* 自分の共有プレビューは緑枠で区別 */
+.screen-tile.self {
+	border-color: #2a7d3f;
+}
+
+/* 拡大表示オーバーレイ */
+#share-big {
+	position: absolute;
+	inset: 0;
+	display: none;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.6);
+	z-index: 40;
+	cursor: zoom-out;
+}
+
+#share-big.on {
+	display: flex;
+}
+
+#share-big video {
+	width: min(90%, 1100px);
+	aspect-ratio: 16 / 9;
+	object-fit: contain;
+	background: #000;
+	border: 3px solid #1f3fb0;
+	border-radius: 8px;
+	box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* 転送量メーター */
+#usage {
+	margin-bottom: 10px;
+}
+
+.usage-label {
+	font-size: 11px;
+	color: #737a70;
+	margin-bottom: 4px;
+}
+
+.usage-bar {
+	height: 6px;
+	background: #cdd2c9;
+	border-radius: 999px;
+	overflow: hidden;
+}
+
+.usage-bar span {
+	display: block;
+	height: 100%;
+	border-radius: 999px;
+}
+
+/* 退出・離席ボタン */
+#actions {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+
+#actions .actbtn {
+	flex: 1;
+	width: auto;
+	margin: 0;
+	padding: 9px 10px;
+	border: 1px solid #b4bbb0;
+	border-radius: 10px;
+	background: #eff1ec;
+	color: #141815;
+	font-size: 13px;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+#actions .actbtn.danger {
+	background: #fbeee9;
+	border-color: #e0a596;
+	color: #b23a2a;
+}
+
+#actions #away-btn.on {
+	background: #e0a83f;
+	border-color: #e0a83f;
+	color: #fff;
+}
+
+/* ── オフィス左下のツールバー（アプリ風トグルボタン） ── */
+#dock {
+	margin-top: auto;
+	/* メニューの一番下へ寄せる */
+	display: flex;
+	gap: 10px;
+}
+
+#dock .toolbtn {
+	flex: 1;
+	width: auto;
+	margin: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 5px;
+	padding: 12px 8px;
+	border: none;
+	border-radius: 16px;
+	background: #c7ccc4;
+	/* OFF＝灰色 */
+	color: #3a3f39;
+	cursor: pointer;
+	transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.05s;
+}
+
+#dock .toolbtn .ic {
+	font-size: 22px;
+	line-height: 1;
+}
+
+#dock .toolbtn .lb {
+	font-size: 11px;
+	line-height: 1;
+}
+
+#dock .toolbtn:hover {
+	filter: brightness(0.97);
+}
+
+#dock .toolbtn:active {
+	transform: translateY(1px);
+}
+
+#dock .toolbtn.on {
+	background: #2a7d3f;
+	/* ON＝緑 */
+	color: #fff;
+	box-shadow: 0 3px 10px rgba(42, 125, 63, 0.35);
+}
+
+#dock .toolbtn:disabled {
+	opacity: 0.45;
+	cursor: default;
+	box-shadow: none;
+}
+
+/* ── 家具リンクの「開きますか？」プロンプト（オフィス） ── */
+#link-prompt {
+	position: absolute;
+	left: 50%;
+	bottom: 24px;
+	transform: translateX(-50%);
+	z-index: 30;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 16px;
+	background: #fff;
+	border-radius: 14px;
+	box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+	max-width: 90%;
+}
+
+#link-prompt .lp-text {
+	font-size: 14px;
+	color: #141815;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+#link-prompt .lp-open {
+	flex: none;
+	padding: 8px 18px;
+	border: none;
+	border-radius: 10px;
+	background: #1f3fb0;
+	color: #fff;
+	font-size: 14px;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+#link-prompt .lp-open:hover {
+	filter: brightness(1.05);
+}
+
+/* hidden 属性で確実に隠す（display:flex より優先） */
+#link-prompt[hidden] {
+	display: none;
+}

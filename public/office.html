@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title data-config-title="バーチャルオフィス">バーチャルオフィス</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+	<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700&display=swap" rel="stylesheet" />
+	<link rel="stylesheet" href="style.css" />
+	<script src="config.js"></script>
+	<script src="config.local.js"></script>
+</head>
+
+<body>
+	<div id="admin">
+		<!-- メニューバー -->
+		<aside id="rail">
+			<h2 class="rail-h" data-config="orgName">デモオフィス</h2>
+			<div id="roster"></div>
+			<button type="button" id="people-btn">勤務者一覧</button>
+			<div class="rail-sub">チャット</div>
+			<div id="chat-log"></div>
+			<form id="chat-form">
+				<textarea id="chat-input" placeholder="メッセージ" maxlength="500"></textarea>
+				<button type="submit" id="chat-send">送信</button>
+			</form>
+			<button type="button" id="comment-add-btn">看板を作成</button>
+			<div id="usage"></div>
+			<div id="actions">
+				<button type="button" id="away-btn" class="actbtn">離席</button>
+				<button type="button" id="leave-btn" class="actbtn danger">退出</button>
+			</div>
+			<div id="dock">
+				<button type="button" id="mic-btn" class="toolbtn">
+					<span class="ic">🔇</span>
+					<span class="lb">ミュート中</span>
+				</button>
+				<button type="button" id="screen-btn" class="toolbtn">
+					<span class="ic">🖥️</span>
+					<span class="lb">画面共有</span>
+				</button>
+			</div>
+		</aside>
+
+		<!-- オフィス -->
+		<section id="stage">
+			<div id="banner"></div>
+			<canvas id="plan" width="640" height="480"></canvas>
+			<div id="shares"></div>
+			<div id="share-big"><video autoplay playsinline muted></video></div>
+			<div id="link-prompt" hidden>
+				<span class="lp-text" id="link-label"></span>
+				<button type="button" class="lp-open" id="link-open">開く</button>
+			</div>
+			<div id="people-modal">
+				<div class="cmodal-box">
+					<div class="cmodal-head">勤務者一覧</div>
+					<div id="people-list"></div>
+					<div class="cmodal-foot">
+						<button type="button" id="people-close">閉じる</button>
+					</div>
+				</div>
+			</div>
+			<div id="away-modal">
+				<div class="cmodal-box">
+					<div class="cmodal-head">💬 離席中のコメント</div>
+					<textarea id="away-text" rows="3" placeholder="周りの人に状況を伝えましょう" maxlength="100"></textarea>
+					<div class="cmodal-foot">
+						<button type="button" id="away-save" class="primary">更新</button>
+					</div>
+				</div>
+			</div>
+			<script type="module" src="office/main.js"></script>
+		</section>
+	</div>
+
+	<!-- コメント（看板）設定モーダル -->
+	<div id="comment-modal">
+		<div class="cmodal-box">
+			<div class="cmodal-head" id="c-title">看板の作成</div>
+
+			<label class="cfield">
+				<span class="clabel">テキスト</span>
+				<textarea id="c-text" rows="3" placeholder="文字を入力する"></textarea>
+			</label>
+
+			<div class="crow">
+				<label class="cfield">
+					<span class="clabel">文字サイズ</span>
+					<select id="c-size">
+						<option value="12">小</option>
+						<option value="16" selected>中</option>
+						<option value="22">大</option>
+						<option value="30">特大</option>
+					</select>
+				</label>
+				<label class="cfield">
+					<span class="clabel">文字色</span>
+					<input type="color" id="c-color" value="#141815" />
+				</label>
+				<label class="cfield">
+					<span class="clabel">背景色</span>
+					<input type="color" id="c-bg" value="#ffffff" />
+				</label>
+			</div>
+
+			<div class="crow">
+				<label class="ccheck"><input type="checkbox" id="c-bold" /> 太字</label>
+				<label class="ccheck"><input type="checkbox" id="c-italic" /> 斜体</label>
+			</div>
+
+			<div class="cfield">
+				<span class="clabel">期限日時（必須）</span>
+				<div class="cdt">
+					<select id="c-year"></select><span>年</span>
+					<select id="c-month"></select><span>月</span>
+					<select id="c-day"></select><span>日</span>
+				</div>
+				<div class="cdt">
+					<select id="c-hour"></select><span>時</span>
+					<select id="c-min"></select><span>分</span>
+				</div>
+			</div>
+
+			<p id="c-err" class="cmodal-err"></p>
+
+			<div class="cmodal-foot">
+				<button type="button" id="c-cancel">キャンセル</button>
+				<button type="button" id="c-save" class="primary">作成</button>
+			</div>
+		</div>
+	</div>
+</body>
+
+</html>

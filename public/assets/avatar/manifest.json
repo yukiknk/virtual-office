@@ -1,0 +1,1808 @@
+{
+  "head": [
+    {
+      "file": "person__amber.png",
+      "type": "person",
+      "color": "amber"
+    },
+    {
+      "file": "person__light.png",
+      "type": "person",
+      "color": "light"
+    },
+    {
+      "file": "person__olive.png",
+      "type": "person",
+      "color": "olive"
+    },
+    {
+      "file": "pumpkin__orange.png",
+      "type": "pumpkin",
+      "color": "orange"
+    },
+    {
+      "file": "skeleton__sky.png",
+      "type": "skeleton",
+      "color": "sky"
+    },
+    {
+      "file": "skeleton__slate.png",
+      "type": "skeleton",
+      "color": "slate"
+    },
+    {
+      "file": "skeleton__white.png",
+      "type": "skeleton",
+      "color": "white"
+    },
+    {
+      "file": "wolf__blue.png",
+      "type": "wolf",
+      "color": "blue"
+    },
+    {
+      "file": "wolf__green.png",
+      "type": "wolf",
+      "color": "green"
+    },
+    {
+      "file": "wolf__lavender.png",
+      "type": "wolf",
+      "color": "lavender"
+    },
+    {
+      "file": "wolf__light.png",
+      "type": "wolf",
+      "color": "light"
+    },
+    {
+      "file": "wolf__olive.png",
+      "type": "wolf",
+      "color": "olive"
+    }
+  ],
+  "hair": [
+    {
+      "file": "afro__black.png",
+      "type": "afro",
+      "color": "black"
+    },
+    {
+      "file": "afro__blue.png",
+      "type": "afro",
+      "color": "blue"
+    },
+    {
+      "file": "afro__brown.png",
+      "type": "afro",
+      "color": "brown"
+    },
+    {
+      "file": "afro__gold.png",
+      "type": "afro",
+      "color": "gold"
+    },
+    {
+      "file": "afro__gray.png",
+      "type": "afro",
+      "color": "gray"
+    },
+    {
+      "file": "afro__green.png",
+      "type": "afro",
+      "color": "green"
+    },
+    {
+      "file": "afro__pink.png",
+      "type": "afro",
+      "color": "pink"
+    },
+    {
+      "file": "afro__white.png",
+      "type": "afro",
+      "color": "white"
+    },
+    {
+      "file": "bangs__black.png",
+      "type": "bangs",
+      "color": "black"
+    },
+    {
+      "file": "bangs__blue.png",
+      "type": "bangs",
+      "color": "blue"
+    },
+    {
+      "file": "bangs__brown.png",
+      "type": "bangs",
+      "color": "brown"
+    },
+    {
+      "file": "bangs__gold.png",
+      "type": "bangs",
+      "color": "gold"
+    },
+    {
+      "file": "bangs__gray.png",
+      "type": "bangs",
+      "color": "gray"
+    },
+    {
+      "file": "bangs__green.png",
+      "type": "bangs",
+      "color": "green"
+    },
+    {
+      "file": "bangs__pink.png",
+      "type": "bangs",
+      "color": "pink"
+    },
+    {
+      "file": "bangs__white.png",
+      "type": "bangs",
+      "color": "white"
+    },
+    {
+      "file": "bangs_short__black.png",
+      "type": "bangs_short",
+      "color": "black"
+    },
+    {
+      "file": "bangs_short__blue.png",
+      "type": "bangs_short",
+      "color": "blue"
+    },
+    {
+      "file": "bangs_short__brown.png",
+      "type": "bangs_short",
+      "color": "brown"
+    },
+    {
+      "file": "bangs_short__gold.png",
+      "type": "bangs_short",
+      "color": "gold"
+    },
+    {
+      "file": "bangs_short__gray.png",
+      "type": "bangs_short",
+      "color": "gray"
+    },
+    {
+      "file": "bangs_short__green.png",
+      "type": "bangs_short",
+      "color": "green"
+    },
+    {
+      "file": "bangs_short__pink.png",
+      "type": "bangs_short",
+      "color": "pink"
+    },
+    {
+      "file": "bangs_short__white.png",
+      "type": "bangs_short",
+      "color": "white"
+    },
+    {
+      "file": "beadhead__black.png",
+      "type": "beadhead",
+      "color": "black"
+    },
+    {
+      "file": "beadhead__blue.png",
+      "type": "beadhead",
+      "color": "blue"
+    },
+    {
+      "file": "beadhead__brown.png",
+      "type": "beadhead",
+      "color": "brown"
+    },
+    {
+      "file": "beadhead__gold.png",
+      "type": "beadhead",
+      "color": "gold"
+    },
+    {
+      "file": "beadhead__gray.png",
+      "type": "beadhead",
+      "color": "gray"
+    },
+    {
+      "file": "beadhead__green.png",
+      "type": "beadhead",
+      "color": "green"
+    },
+    {
+      "file": "beadhead__pink.png",
+      "type": "beadhead",
+      "color": "pink"
+    },
+    {
+      "file": "beadhead__white.png",
+      "type": "beadhead",
+      "color": "white"
+    },
+    {
+      "file": "buzzcut__black.png",
+      "type": "buzzcut",
+      "color": "black"
+    },
+    {
+      "file": "buzzcut__blue.png",
+      "type": "buzzcut",
+      "color": "blue"
+    },
+    {
+      "file": "buzzcut__brown.png",
+      "type": "buzzcut",
+      "color": "brown"
+    },
+    {
+      "file": "buzzcut__gold.png",
+      "type": "buzzcut",
+      "color": "gold"
+    },
+    {
+      "file": "buzzcut__gray.png",
+      "type": "buzzcut",
+      "color": "gray"
+    },
+    {
+      "file": "buzzcut__green.png",
+      "type": "buzzcut",
+      "color": "green"
+    },
+    {
+      "file": "buzzcut__pink.png",
+      "type": "buzzcut",
+      "color": "pink"
+    },
+    {
+      "file": "buzzcut__white.png",
+      "type": "buzzcut",
+      "color": "white"
+    },
+    {
+      "file": "cornrows__black.png",
+      "type": "cornrows",
+      "color": "black"
+    },
+    {
+      "file": "cornrows__blue.png",
+      "type": "cornrows",
+      "color": "blue"
+    },
+    {
+      "file": "cornrows__brown.png",
+      "type": "cornrows",
+      "color": "brown"
+    },
+    {
+      "file": "cornrows__gold.png",
+      "type": "cornrows",
+      "color": "gold"
+    },
+    {
+      "file": "cornrows__gray.png",
+      "type": "cornrows",
+      "color": "gray"
+    },
+    {
+      "file": "cornrows__green.png",
+      "type": "cornrows",
+      "color": "green"
+    },
+    {
+      "file": "cornrows__pink.png",
+      "type": "cornrows",
+      "color": "pink"
+    },
+    {
+      "file": "cornrows__white.png",
+      "type": "cornrows",
+      "color": "white"
+    },
+    {
+      "file": "dreadlocks_long__black.png",
+      "type": "dreadlocks_long",
+      "color": "black"
+    },
+    {
+      "file": "dreadlocks_long__blue.png",
+      "type": "dreadlocks_long",
+      "color": "blue"
+    },
+    {
+      "file": "dreadlocks_long__brown.png",
+      "type": "dreadlocks_long",
+      "color": "brown"
+    },
+    {
+      "file": "dreadlocks_long__gold.png",
+      "type": "dreadlocks_long",
+      "color": "gold"
+    },
+    {
+      "file": "dreadlocks_long__gray.png",
+      "type": "dreadlocks_long",
+      "color": "gray"
+    },
+    {
+      "file": "dreadlocks_long__green.png",
+      "type": "dreadlocks_long",
+      "color": "green"
+    },
+    {
+      "file": "dreadlocks_long__pink.png",
+      "type": "dreadlocks_long",
+      "color": "pink"
+    },
+    {
+      "file": "dreadlocks_long__white.png",
+      "type": "dreadlocks_long",
+      "color": "white"
+    },
+    {
+      "file": "dreadlocks_short__black.png",
+      "type": "dreadlocks_short",
+      "color": "black"
+    },
+    {
+      "file": "dreadlocks_short__blue.png",
+      "type": "dreadlocks_short",
+      "color": "blue"
+    },
+    {
+      "file": "dreadlocks_short__brown.png",
+      "type": "dreadlocks_short",
+      "color": "brown"
+    },
+    {
+      "file": "dreadlocks_short__gold.png",
+      "type": "dreadlocks_short",
+      "color": "gold"
+    },
+    {
+      "file": "dreadlocks_short__gray.png",
+      "type": "dreadlocks_short",
+      "color": "gray"
+    },
+    {
+      "file": "dreadlocks_short__green.png",
+      "type": "dreadlocks_short",
+      "color": "green"
+    },
+    {
+      "file": "dreadlocks_short__pink.png",
+      "type": "dreadlocks_short",
+      "color": "pink"
+    },
+    {
+      "file": "dreadlocks_short__white.png",
+      "type": "dreadlocks_short",
+      "color": "white"
+    },
+    {
+      "file": "flat_top_fade__black.png",
+      "type": "flat_top_fade",
+      "color": "black"
+    },
+    {
+      "file": "flat_top_fade__blue.png",
+      "type": "flat_top_fade",
+      "color": "blue"
+    },
+    {
+      "file": "flat_top_fade__brown.png",
+      "type": "flat_top_fade",
+      "color": "brown"
+    },
+    {
+      "file": "flat_top_fade__gold.png",
+      "type": "flat_top_fade",
+      "color": "gold"
+    },
+    {
+      "file": "flat_top_fade__gray.png",
+      "type": "flat_top_fade",
+      "color": "gray"
+    },
+    {
+      "file": "flat_top_fade__green.png",
+      "type": "flat_top_fade",
+      "color": "green"
+    },
+    {
+      "file": "flat_top_fade__pink.png",
+      "type": "flat_top_fade",
+      "color": "pink"
+    },
+    {
+      "file": "flat_top_fade__white.png",
+      "type": "flat_top_fade",
+      "color": "white"
+    },
+    {
+      "file": "idol__black.png",
+      "type": "idol",
+      "color": "black"
+    },
+    {
+      "file": "idol__blue.png",
+      "type": "idol",
+      "color": "blue"
+    },
+    {
+      "file": "idol__brown.png",
+      "type": "idol",
+      "color": "brown"
+    },
+    {
+      "file": "idol__gold.png",
+      "type": "idol",
+      "color": "gold"
+    },
+    {
+      "file": "idol__gray.png",
+      "type": "idol",
+      "color": "gray"
+    },
+    {
+      "file": "idol__green.png",
+      "type": "idol",
+      "color": "green"
+    },
+    {
+      "file": "idol__pink.png",
+      "type": "idol",
+      "color": "pink"
+    },
+    {
+      "file": "idol__white.png",
+      "type": "idol",
+      "color": "white"
+    },
+    {
+      "file": "messy__black.png",
+      "type": "messy",
+      "color": "black"
+    },
+    {
+      "file": "messy__blue.png",
+      "type": "messy",
+      "color": "blue"
+    },
+    {
+      "file": "messy__brown.png",
+      "type": "messy",
+      "color": "brown"
+    },
+    {
+      "file": "messy__gold.png",
+      "type": "messy",
+      "color": "gold"
+    },
+    {
+      "file": "messy__gray.png",
+      "type": "messy",
+      "color": "gray"
+    },
+    {
+      "file": "messy__green.png",
+      "type": "messy",
+      "color": "green"
+    },
+    {
+      "file": "messy__pink.png",
+      "type": "messy",
+      "color": "pink"
+    },
+    {
+      "file": "messy__white.png",
+      "type": "messy",
+      "color": "white"
+    },
+    {
+      "file": "natural__black.png",
+      "type": "natural",
+      "color": "black"
+    },
+    {
+      "file": "natural__blue.png",
+      "type": "natural",
+      "color": "blue"
+    },
+    {
+      "file": "natural__brown.png",
+      "type": "natural",
+      "color": "brown"
+    },
+    {
+      "file": "natural__gold.png",
+      "type": "natural",
+      "color": "gold"
+    },
+    {
+      "file": "natural__gray.png",
+      "type": "natural",
+      "color": "gray"
+    },
+    {
+      "file": "natural__green.png",
+      "type": "natural",
+      "color": "green"
+    },
+    {
+      "file": "natural__pink.png",
+      "type": "natural",
+      "color": "pink"
+    },
+    {
+      "file": "natural__white.png",
+      "type": "natural",
+      "color": "white"
+    },
+    {
+      "file": "spike__black.png",
+      "type": "spike",
+      "color": "black"
+    },
+    {
+      "file": "spike__blue.png",
+      "type": "spike",
+      "color": "blue"
+    },
+    {
+      "file": "spike__brown.png",
+      "type": "spike",
+      "color": "brown"
+    },
+    {
+      "file": "spike__gold.png",
+      "type": "spike",
+      "color": "gold"
+    },
+    {
+      "file": "spike__gray.png",
+      "type": "spike",
+      "color": "gray"
+    },
+    {
+      "file": "spike__green.png",
+      "type": "spike",
+      "color": "green"
+    },
+    {
+      "file": "spike__pink.png",
+      "type": "spike",
+      "color": "pink"
+    },
+    {
+      "file": "spike__white.png",
+      "type": "spike",
+      "color": "white"
+    },
+    {
+      "file": "twists_fade__black.png",
+      "type": "twists_fade",
+      "color": "black"
+    },
+    {
+      "file": "twists_fade__blue.png",
+      "type": "twists_fade",
+      "color": "blue"
+    },
+    {
+      "file": "twists_fade__brown.png",
+      "type": "twists_fade",
+      "color": "brown"
+    },
+    {
+      "file": "twists_fade__gold.png",
+      "type": "twists_fade",
+      "color": "gold"
+    },
+    {
+      "file": "twists_fade__gray.png",
+      "type": "twists_fade",
+      "color": "gray"
+    },
+    {
+      "file": "twists_fade__green.png",
+      "type": "twists_fade",
+      "color": "green"
+    },
+    {
+      "file": "twists_fade__pink.png",
+      "type": "twists_fade",
+      "color": "pink"
+    },
+    {
+      "file": "twists_fade__white.png",
+      "type": "twists_fade",
+      "color": "white"
+    },
+    {
+      "file": "z_bob__black.png",
+      "type": "z_bob",
+      "color": "black"
+    },
+    {
+      "file": "z_bob__blue.png",
+      "type": "z_bob",
+      "color": "blue"
+    },
+    {
+      "file": "z_bob__brown.png",
+      "type": "z_bob",
+      "color": "brown"
+    },
+    {
+      "file": "z_bob__gold.png",
+      "type": "z_bob",
+      "color": "gold"
+    },
+    {
+      "file": "z_bob__gray.png",
+      "type": "z_bob",
+      "color": "gray"
+    },
+    {
+      "file": "z_bob__green.png",
+      "type": "z_bob",
+      "color": "green"
+    },
+    {
+      "file": "z_bob__pink.png",
+      "type": "z_bob",
+      "color": "pink"
+    },
+    {
+      "file": "z_bob__white.png",
+      "type": "z_bob",
+      "color": "white"
+    },
+    {
+      "file": "z_bob_side__black.png",
+      "type": "z_bob_side",
+      "color": "black"
+    },
+    {
+      "file": "z_bob_side__blue.png",
+      "type": "z_bob_side",
+      "color": "blue"
+    },
+    {
+      "file": "z_bob_side__brown.png",
+      "type": "z_bob_side",
+      "color": "brown"
+    },
+    {
+      "file": "z_bob_side__gold.png",
+      "type": "z_bob_side",
+      "color": "gold"
+    },
+    {
+      "file": "z_bob_side__gray.png",
+      "type": "z_bob_side",
+      "color": "gray"
+    },
+    {
+      "file": "z_bob_side__green.png",
+      "type": "z_bob_side",
+      "color": "green"
+    },
+    {
+      "file": "z_bob_side__pink.png",
+      "type": "z_bob_side",
+      "color": "pink"
+    },
+    {
+      "file": "z_bob_side__white.png",
+      "type": "z_bob_side",
+      "color": "white"
+    },
+    {
+      "file": "z_bunches__black.png",
+      "type": "z_bunches",
+      "color": "black"
+    },
+    {
+      "file": "z_bunches__blue.png",
+      "type": "z_bunches",
+      "color": "blue"
+    },
+    {
+      "file": "z_bunches__brown.png",
+      "type": "z_bunches",
+      "color": "brown"
+    },
+    {
+      "file": "z_bunches__gold.png",
+      "type": "z_bunches",
+      "color": "gold"
+    },
+    {
+      "file": "z_bunches__gray.png",
+      "type": "z_bunches",
+      "color": "gray"
+    },
+    {
+      "file": "z_bunches__green.png",
+      "type": "z_bunches",
+      "color": "green"
+    },
+    {
+      "file": "z_bunches__pink.png",
+      "type": "z_bunches",
+      "color": "pink"
+    },
+    {
+      "file": "z_bunches__white.png",
+      "type": "z_bunches",
+      "color": "white"
+    },
+    {
+      "file": "z_curly_long__black.png",
+      "type": "z_curly_long",
+      "color": "black"
+    },
+    {
+      "file": "z_curly_long__blue.png",
+      "type": "z_curly_long",
+      "color": "blue"
+    },
+    {
+      "file": "z_curly_long__brown.png",
+      "type": "z_curly_long",
+      "color": "brown"
+    },
+    {
+      "file": "z_curly_long__gold.png",
+      "type": "z_curly_long",
+      "color": "gold"
+    },
+    {
+      "file": "z_curly_long__gray.png",
+      "type": "z_curly_long",
+      "color": "gray"
+    },
+    {
+      "file": "z_curly_long__green.png",
+      "type": "z_curly_long",
+      "color": "green"
+    },
+    {
+      "file": "z_curly_long__pink.png",
+      "type": "z_curly_long",
+      "color": "pink"
+    },
+    {
+      "file": "z_curly_long__white.png",
+      "type": "z_curly_long",
+      "color": "white"
+    },
+    {
+      "file": "z_curly_short__black.png",
+      "type": "z_curly_short",
+      "color": "black"
+    },
+    {
+      "file": "z_curly_short__blue.png",
+      "type": "z_curly_short",
+      "color": "blue"
+    },
+    {
+      "file": "z_curly_short__brown.png",
+      "type": "z_curly_short",
+      "color": "brown"
+    },
+    {
+      "file": "z_curly_short__gold.png",
+      "type": "z_curly_short",
+      "color": "gold"
+    },
+    {
+      "file": "z_curly_short__gray.png",
+      "type": "z_curly_short",
+      "color": "gray"
+    },
+    {
+      "file": "z_curly_short__green.png",
+      "type": "z_curly_short",
+      "color": "green"
+    },
+    {
+      "file": "z_curly_short__pink.png",
+      "type": "z_curly_short",
+      "color": "pink"
+    },
+    {
+      "file": "z_curly_short__white.png",
+      "type": "z_curly_short",
+      "color": "white"
+    },
+    {
+      "file": "z_jewfro__black.png",
+      "type": "z_jewfro",
+      "color": "black"
+    },
+    {
+      "file": "z_jewfro__blue.png",
+      "type": "z_jewfro",
+      "color": "blue"
+    },
+    {
+      "file": "z_jewfro__brown.png",
+      "type": "z_jewfro",
+      "color": "brown"
+    },
+    {
+      "file": "z_jewfro__gold.png",
+      "type": "z_jewfro",
+      "color": "gold"
+    },
+    {
+      "file": "z_jewfro__gray.png",
+      "type": "z_jewfro",
+      "color": "gray"
+    },
+    {
+      "file": "z_jewfro__green.png",
+      "type": "z_jewfro",
+      "color": "green"
+    },
+    {
+      "file": "z_jewfro__pink.png",
+      "type": "z_jewfro",
+      "color": "pink"
+    },
+    {
+      "file": "z_jewfro__white.png",
+      "type": "z_jewfro",
+      "color": "white"
+    },
+    {
+      "file": "z_lt__black.png",
+      "type": "z_lt",
+      "color": "black"
+    },
+    {
+      "file": "z_lt__blue.png",
+      "type": "z_lt",
+      "color": "blue"
+    },
+    {
+      "file": "z_lt__brown.png",
+      "type": "z_lt",
+      "color": "brown"
+    },
+    {
+      "file": "z_lt__gold.png",
+      "type": "z_lt",
+      "color": "gold"
+    },
+    {
+      "file": "z_lt__gray.png",
+      "type": "z_lt",
+      "color": "gray"
+    },
+    {
+      "file": "z_lt__green.png",
+      "type": "z_lt",
+      "color": "green"
+    },
+    {
+      "file": "z_lt__pink.png",
+      "type": "z_lt",
+      "color": "pink"
+    },
+    {
+      "file": "z_lt__white.png",
+      "type": "z_lt",
+      "color": "white"
+    },
+    {
+      "file": "z_messy__black.png",
+      "type": "z_messy",
+      "color": "black"
+    },
+    {
+      "file": "z_messy__blue.png",
+      "type": "z_messy",
+      "color": "blue"
+    },
+    {
+      "file": "z_messy__brown.png",
+      "type": "z_messy",
+      "color": "brown"
+    },
+    {
+      "file": "z_messy__gold.png",
+      "type": "z_messy",
+      "color": "gold"
+    },
+    {
+      "file": "z_messy__gray.png",
+      "type": "z_messy",
+      "color": "gray"
+    },
+    {
+      "file": "z_messy__green.png",
+      "type": "z_messy",
+      "color": "green"
+    },
+    {
+      "file": "z_messy__pink.png",
+      "type": "z_messy",
+      "color": "pink"
+    },
+    {
+      "file": "z_messy__white.png",
+      "type": "z_messy",
+      "color": "white"
+    },
+    {
+      "file": "z_pigtails__black.png",
+      "type": "z_pigtails",
+      "color": "black"
+    },
+    {
+      "file": "z_pigtails__blue.png",
+      "type": "z_pigtails",
+      "color": "blue"
+    },
+    {
+      "file": "z_pigtails__brown.png",
+      "type": "z_pigtails",
+      "color": "brown"
+    },
+    {
+      "file": "z_pigtails__gold.png",
+      "type": "z_pigtails",
+      "color": "gold"
+    },
+    {
+      "file": "z_pigtails__gray.png",
+      "type": "z_pigtails",
+      "color": "gray"
+    },
+    {
+      "file": "z_pigtails__green.png",
+      "type": "z_pigtails",
+      "color": "green"
+    },
+    {
+      "file": "z_pigtails__pink.png",
+      "type": "z_pigtails",
+      "color": "pink"
+    },
+    {
+      "file": "z_pigtails__white.png",
+      "type": "z_pigtails",
+      "color": "white"
+    },
+    {
+      "file": "z_princess__black.png",
+      "type": "z_princess",
+      "color": "black"
+    },
+    {
+      "file": "z_princess__blue.png",
+      "type": "z_princess",
+      "color": "blue"
+    },
+    {
+      "file": "z_princess__brown.png",
+      "type": "z_princess",
+      "color": "brown"
+    },
+    {
+      "file": "z_princess__gold.png",
+      "type": "z_princess",
+      "color": "gold"
+    },
+    {
+      "file": "z_princess__gray.png",
+      "type": "z_princess",
+      "color": "gray"
+    },
+    {
+      "file": "z_princess__green.png",
+      "type": "z_princess",
+      "color": "green"
+    },
+    {
+      "file": "z_princess__pink.png",
+      "type": "z_princess",
+      "color": "pink"
+    },
+    {
+      "file": "z_princess__white.png",
+      "type": "z_princess",
+      "color": "white"
+    },
+    {
+      "file": "z_side_swoop__black.png",
+      "type": "z_side_swoop",
+      "color": "black"
+    },
+    {
+      "file": "z_side_swoop__blue.png",
+      "type": "z_side_swoop",
+      "color": "blue"
+    },
+    {
+      "file": "z_side_swoop__brown.png",
+      "type": "z_side_swoop",
+      "color": "brown"
+    },
+    {
+      "file": "z_side_swoop__gold.png",
+      "type": "z_side_swoop",
+      "color": "gold"
+    },
+    {
+      "file": "z_side_swoop__gray.png",
+      "type": "z_side_swoop",
+      "color": "gray"
+    },
+    {
+      "file": "z_side_swoop__green.png",
+      "type": "z_side_swoop",
+      "color": "green"
+    },
+    {
+      "file": "z_side_swoop__pink.png",
+      "type": "z_side_swoop",
+      "color": "pink"
+    },
+    {
+      "file": "z_side_swoop__white.png",
+      "type": "z_side_swoop",
+      "color": "white"
+    },
+    {
+      "file": "z_swoop__black.png",
+      "type": "z_swoop",
+      "color": "black"
+    },
+    {
+      "file": "z_swoop__blue.png",
+      "type": "z_swoop",
+      "color": "blue"
+    },
+    {
+      "file": "z_swoop__brown.png",
+      "type": "z_swoop",
+      "color": "brown"
+    },
+    {
+      "file": "z_swoop__gold.png",
+      "type": "z_swoop",
+      "color": "gold"
+    },
+    {
+      "file": "z_swoop__gray.png",
+      "type": "z_swoop",
+      "color": "gray"
+    },
+    {
+      "file": "z_swoop__green.png",
+      "type": "z_swoop",
+      "color": "green"
+    },
+    {
+      "file": "z_swoop__pink.png",
+      "type": "z_swoop",
+      "color": "pink"
+    },
+    {
+      "file": "z_swoop__white.png",
+      "type": "z_swoop",
+      "color": "white"
+    },
+    {
+      "file": "z_unkempt__black.png",
+      "type": "z_unkempt",
+      "color": "black"
+    },
+    {
+      "file": "z_unkempt__blue.png",
+      "type": "z_unkempt",
+      "color": "blue"
+    },
+    {
+      "file": "z_unkempt__brown.png",
+      "type": "z_unkempt",
+      "color": "brown"
+    },
+    {
+      "file": "z_unkempt__gold.png",
+      "type": "z_unkempt",
+      "color": "gold"
+    },
+    {
+      "file": "z_unkempt__gray.png",
+      "type": "z_unkempt",
+      "color": "gray"
+    },
+    {
+      "file": "z_unkempt__green.png",
+      "type": "z_unkempt",
+      "color": "green"
+    },
+    {
+      "file": "z_unkempt__pink.png",
+      "type": "z_unkempt",
+      "color": "pink"
+    },
+    {
+      "file": "z_unkempt__white.png",
+      "type": "z_unkempt",
+      "color": "white"
+    }
+  ],
+  "body": [
+    {
+      "file": "person__amber.png",
+      "type": "person",
+      "color": "amber"
+    },
+    {
+      "file": "person__light.png",
+      "type": "person",
+      "color": "light"
+    },
+    {
+      "file": "person__olive.png",
+      "type": "person",
+      "color": "olive"
+    },
+    {
+      "file": "skeleton__sky.png",
+      "type": "skeleton",
+      "color": "sky"
+    },
+    {
+      "file": "skeleton__slate.png",
+      "type": "skeleton",
+      "color": "slate"
+    },
+    {
+      "file": "skeleton__white.png",
+      "type": "skeleton",
+      "color": "white"
+    }
+  ],
+  "tops": [
+    {
+      "file": "longsleeve_laced__black.png",
+      "type": "longsleeve_laced",
+      "color": "black"
+    },
+    {
+      "file": "longsleeve_laced__blue.png",
+      "type": "longsleeve_laced",
+      "color": "blue"
+    },
+    {
+      "file": "longsleeve_laced__brown.png",
+      "type": "longsleeve_laced",
+      "color": "brown"
+    },
+    {
+      "file": "longsleeve_laced__gray.png",
+      "type": "longsleeve_laced",
+      "color": "gray"
+    },
+    {
+      "file": "longsleeve_laced__green.png",
+      "type": "longsleeve_laced",
+      "color": "green"
+    },
+    {
+      "file": "longsleeve_laced__lavender.png",
+      "type": "longsleeve_laced",
+      "color": "lavender"
+    },
+    {
+      "file": "longsleeve_laced__orange.png",
+      "type": "longsleeve_laced",
+      "color": "orange"
+    },
+    {
+      "file": "longsleeve_laced__red.png",
+      "type": "longsleeve_laced",
+      "color": "red"
+    },
+    {
+      "file": "longsleeve_laced__tan.png",
+      "type": "longsleeve_laced",
+      "color": "tan"
+    },
+    {
+      "file": "longsleeve_laced__teal.png",
+      "type": "longsleeve_laced",
+      "color": "teal"
+    },
+    {
+      "file": "longsleeve_laced__white.png",
+      "type": "longsleeve_laced",
+      "color": "white"
+    },
+    {
+      "file": "longsleeve_laced__yellow.png",
+      "type": "longsleeve_laced",
+      "color": "yellow"
+    },
+    {
+      "file": "overalls__black.png",
+      "type": "overalls",
+      "color": "black"
+    },
+    {
+      "file": "overalls__blue.png",
+      "type": "overalls",
+      "color": "blue"
+    },
+    {
+      "file": "overalls__brown.png",
+      "type": "overalls",
+      "color": "brown"
+    },
+    {
+      "file": "overalls__gray.png",
+      "type": "overalls",
+      "color": "gray"
+    },
+    {
+      "file": "overalls__green.png",
+      "type": "overalls",
+      "color": "green"
+    },
+    {
+      "file": "overalls__lavender.png",
+      "type": "overalls",
+      "color": "lavender"
+    },
+    {
+      "file": "overalls__orange.png",
+      "type": "overalls",
+      "color": "orange"
+    },
+    {
+      "file": "overalls__red.png",
+      "type": "overalls",
+      "color": "red"
+    },
+    {
+      "file": "overalls__tan.png",
+      "type": "overalls",
+      "color": "tan"
+    },
+    {
+      "file": "overalls__teal.png",
+      "type": "overalls",
+      "color": "teal"
+    },
+    {
+      "file": "overalls__white.png",
+      "type": "overalls",
+      "color": "white"
+    },
+    {
+      "file": "overalls__yellow.png",
+      "type": "overalls",
+      "color": "yellow"
+    },
+    {
+      "file": "santa_coat__black.png",
+      "type": "santa_coat",
+      "color": "black"
+    },
+    {
+      "file": "santa_coat__blue.png",
+      "type": "santa_coat",
+      "color": "blue"
+    },
+    {
+      "file": "santa_coat__brown.png",
+      "type": "santa_coat",
+      "color": "brown"
+    },
+    {
+      "file": "santa_coat__gray.png",
+      "type": "santa_coat",
+      "color": "gray"
+    },
+    {
+      "file": "santa_coat__green.png",
+      "type": "santa_coat",
+      "color": "green"
+    },
+    {
+      "file": "santa_coat__lavender.png",
+      "type": "santa_coat",
+      "color": "lavender"
+    },
+    {
+      "file": "santa_coat__orange.png",
+      "type": "santa_coat",
+      "color": "orange"
+    },
+    {
+      "file": "santa_coat__red.png",
+      "type": "santa_coat",
+      "color": "red"
+    },
+    {
+      "file": "santa_coat__tan.png",
+      "type": "santa_coat",
+      "color": "tan"
+    },
+    {
+      "file": "santa_coat__teal.png",
+      "type": "santa_coat",
+      "color": "teal"
+    },
+    {
+      "file": "santa_coat__yellow.png",
+      "type": "santa_coat",
+      "color": "yellow"
+    },
+    {
+      "file": "trench_coat__balck.png",
+      "type": "trench_coat",
+      "color": "balck"
+    },
+    {
+      "file": "trench_coat__gray.png",
+      "type": "trench_coat",
+      "color": "gray"
+    }
+  ],
+  "bottoms": [
+    {
+      "file": "long_pants__black.png",
+      "type": "long_pants",
+      "color": "black"
+    },
+    {
+      "file": "long_pants__blue.png",
+      "type": "long_pants",
+      "color": "blue"
+    },
+    {
+      "file": "long_pants__brown.png",
+      "type": "long_pants",
+      "color": "brown"
+    },
+    {
+      "file": "long_pants__gray.png",
+      "type": "long_pants",
+      "color": "gray"
+    },
+    {
+      "file": "long_pants__green.png",
+      "type": "long_pants",
+      "color": "green"
+    },
+    {
+      "file": "long_pants__lavender.png",
+      "type": "long_pants",
+      "color": "lavender"
+    },
+    {
+      "file": "long_pants__orange.png",
+      "type": "long_pants",
+      "color": "orange"
+    },
+    {
+      "file": "long_pants__red.png",
+      "type": "long_pants",
+      "color": "red"
+    },
+    {
+      "file": "long_pants__tan.png",
+      "type": "long_pants",
+      "color": "tan"
+    },
+    {
+      "file": "long_pants__teal.png",
+      "type": "long_pants",
+      "color": "teal"
+    },
+    {
+      "file": "long_pants__white.png",
+      "type": "long_pants",
+      "color": "white"
+    },
+    {
+      "file": "long_pants__yellow.png",
+      "type": "long_pants",
+      "color": "yellow"
+    },
+    {
+      "file": "pantaloons__black.png",
+      "type": "pantaloons",
+      "color": "black"
+    },
+    {
+      "file": "pantaloons__blue.png",
+      "type": "pantaloons",
+      "color": "blue"
+    },
+    {
+      "file": "pantaloons__brown.png",
+      "type": "pantaloons",
+      "color": "brown"
+    },
+    {
+      "file": "pantaloons__gray.png",
+      "type": "pantaloons",
+      "color": "gray"
+    },
+    {
+      "file": "pantaloons__green.png",
+      "type": "pantaloons",
+      "color": "green"
+    },
+    {
+      "file": "pantaloons__lavender.png",
+      "type": "pantaloons",
+      "color": "lavender"
+    },
+    {
+      "file": "pantaloons__orange.png",
+      "type": "pantaloons",
+      "color": "orange"
+    },
+    {
+      "file": "pantaloons__red.png",
+      "type": "pantaloons",
+      "color": "red"
+    },
+    {
+      "file": "pantaloons__tan.png",
+      "type": "pantaloons",
+      "color": "tan"
+    },
+    {
+      "file": "pantaloons__teal.png",
+      "type": "pantaloons",
+      "color": "teal"
+    },
+    {
+      "file": "pantaloons__white.png",
+      "type": "pantaloons",
+      "color": "white"
+    },
+    {
+      "file": "pantaloons__yellow.png",
+      "type": "pantaloons",
+      "color": "yellow"
+    },
+    {
+      "file": "skirts__black.png",
+      "type": "skirts",
+      "color": "black"
+    },
+    {
+      "file": "skirts__blue.png",
+      "type": "skirts",
+      "color": "blue"
+    },
+    {
+      "file": "skirts__brown.png",
+      "type": "skirts",
+      "color": "brown"
+    },
+    {
+      "file": "skirts__gray.png",
+      "type": "skirts",
+      "color": "gray"
+    },
+    {
+      "file": "skirts__green.png",
+      "type": "skirts",
+      "color": "green"
+    },
+    {
+      "file": "skirts__orange.png",
+      "type": "skirts",
+      "color": "orange"
+    },
+    {
+      "file": "skirts__red.png",
+      "type": "skirts",
+      "color": "red"
+    },
+    {
+      "file": "skirts__skirts__lavender.png",
+      "type": "skirts",
+      "color": "skirts__lavender"
+    },
+    {
+      "file": "skirts__tan.png",
+      "type": "skirts",
+      "color": "tan"
+    },
+    {
+      "file": "skirts__teal.png",
+      "type": "skirts",
+      "color": "teal"
+    },
+    {
+      "file": "skirts__white.png",
+      "type": "skirts",
+      "color": "white"
+    },
+    {
+      "file": "skirts__yellow.png",
+      "type": "skirts",
+      "color": "yellow"
+    }
+  ],
+  "shoes": [
+    {
+      "file": "shoes__black.png",
+      "type": "shoes",
+      "color": "black"
+    },
+    {
+      "file": "shoes__brown.png",
+      "type": "shoes",
+      "color": "brown"
+    },
+    {
+      "file": "shoes__gray.png",
+      "type": "shoes",
+      "color": "gray"
+    },
+    {
+      "file": "shoes__green.png",
+      "type": "shoes",
+      "color": "green"
+    },
+    {
+      "file": "shoes__lavender.png",
+      "type": "shoes",
+      "color": "lavender"
+    },
+    {
+      "file": "shoes__orange.png",
+      "type": "shoes",
+      "color": "orange"
+    },
+    {
+      "file": "shoes__red.png",
+      "type": "shoes",
+      "color": "red"
+    },
+    {
+      "file": "shoes__shoes__blue.png",
+      "type": "shoes",
+      "color": "shoes__blue"
+    },
+    {
+      "file": "shoes__tan.png",
+      "type": "shoes",
+      "color": "tan"
+    },
+    {
+      "file": "shoes__teal.png",
+      "type": "shoes",
+      "color": "teal"
+    },
+    {
+      "file": "shoes__white.png",
+      "type": "shoes",
+      "color": "white"
+    },
+    {
+      "file": "shoes__yellow.png",
+      "type": "shoes",
+      "color": "yellow"
+    }
+  ],
+  "wings": [
+    {
+      "file": "bat__black.png",
+      "type": "bat",
+      "color": "black"
+    },
+    {
+      "file": "bat__blonde.png",
+      "type": "bat",
+      "color": "blonde"
+    },
+    {
+      "file": "bat__gold.png",
+      "type": "bat",
+      "color": "gold"
+    },
+    {
+      "file": "bat__gray.png",
+      "type": "bat",
+      "color": "gray"
+    },
+    {
+      "file": "bat__green.png",
+      "type": "bat",
+      "color": "green"
+    },
+    {
+      "file": "bat__red.png",
+      "type": "bat",
+      "color": "red"
+    },
+    {
+      "file": "bat__white.png",
+      "type": "bat",
+      "color": "white"
+    },
+    {
+      "file": "feathered__black.png",
+      "type": "feathered",
+      "color": "black"
+    },
+    {
+      "file": "feathered__blue.png",
+      "type": "feathered",
+      "color": "blue"
+    },
+    {
+      "file": "feathered__gold.png",
+      "type": "feathered",
+      "color": "gold"
+    },
+    {
+      "file": "feathered__gray.png",
+      "type": "feathered",
+      "color": "gray"
+    },
+    {
+      "file": "feathered__green.png",
+      "type": "feathered",
+      "color": "green"
+    },
+    {
+      "file": "feathered__red.png",
+      "type": "feathered",
+      "color": "red"
+    },
+    {
+      "file": "feathered__sandy.png",
+      "type": "feathered",
+      "color": "sandy"
+    },
+    {
+      "file": "feathered__white.png",
+      "type": "feathered",
+      "color": "white"
+    },
+    {
+      "file": "monarch__amber.png",
+      "type": "monarch",
+      "color": "amber"
+    },
+    {
+      "file": "monarch__black.png",
+      "type": "monarch",
+      "color": "black"
+    },
+    {
+      "file": "monarch__blue.png",
+      "type": "monarch",
+      "color": "blue"
+    },
+    {
+      "file": "monarch__green.png",
+      "type": "monarch",
+      "color": "green"
+    },
+    {
+      "file": "monarch__lavender.png",
+      "type": "monarch",
+      "color": "lavender"
+    },
+    {
+      "file": "monarch__red.png",
+      "type": "monarch",
+      "color": "red"
+    },
+    {
+      "file": "monarch__sky.png",
+      "type": "monarch",
+      "color": "sky"
+    },
+    {
+      "file": "monarch__white.png",
+      "type": "monarch",
+      "color": "white"
+    },
+    {
+      "file": "monarch__yellow.png",
+      "type": "monarch",
+      "color": "yellow"
+    },
+    {
+      "file": "pixie__amber.png",
+      "type": "pixie",
+      "color": "amber"
+    },
+    {
+      "file": "pixie__black.png",
+      "type": "pixie",
+      "color": "black"
+    },
+    {
+      "file": "pixie__blue.png",
+      "type": "pixie",
+      "color": "blue"
+    },
+    {
+      "file": "pixie__green.png",
+      "type": "pixie",
+      "color": "green"
+    },
+    {
+      "file": "pixie__lavender.png",
+      "type": "pixie",
+      "color": "lavender"
+    },
+    {
+      "file": "pixie__red.png",
+      "type": "pixie",
+      "color": "red"
+    },
+    {
+      "file": "pixie__sky.png",
+      "type": "pixie",
+      "color": "sky"
+    },
+    {
+      "file": "pixie__white.png",
+      "type": "pixie",
+      "color": "white"
+    },
+    {
+      "file": "pixie__yellow.png",
+      "type": "pixie",
+      "color": "yellow"
+    }
+  ],
+  "accessory": [
+    {
+      "file": "axe.png",
+      "type": "axe",
+      "color": ""
+    },
+    {
+      "file": "growsword__blue.png",
+      "type": "growsword",
+      "color": "blue"
+    },
+    {
+      "file": "growsword__red.png",
+      "type": "growsword",
+      "color": "red"
+    },
+    {
+      "file": "hammer.png",
+      "type": "hammer",
+      "color": ""
+    },
+    {
+      "file": "sword.png",
+      "type": "sword",
+      "color": ""
+    },
+    {
+      "file": "waraxe.png",
+      "type": "waraxe",
+      "color": ""
+    }
+  ]
+}

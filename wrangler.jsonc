@@ -1,0 +1,35 @@
+{
+  "name": "virtual-office",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./public"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "LAYOUT_KV",
+      "id": "6d39c872a27b4bb2a8c7e9a5932aa571"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ROOM",
+        "class_name": "Room"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      // 旧クラス OfficeRoom の削除は本番で適用済み。
+      // ローカルの初回起動では OfficeRoom が存在せず失敗するため、タグだけ残して中身は空にする。
+      "tag": "v2"
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "Room"
+      ]
+    }
+  ]
+}
