@@ -1,6 +1,6 @@
 // サイドバーの操作：編集対象タブ・消去・表示切替・保存モード・反映・タイル選択モーダル・状態表示。
 import { store, CATEGORIES, FURNITURE } from "./store.js";
-import { saveLayout, saveZones, saveComments, saveFurniture } from "./data.js";
+import { saveLayout, saveZones, saveComments, saveFurniture, loadWebhook, saveWebhook } from "./data.js";
 
 let redraw = () => { };   // キャンバス再描画（main から editor.draw を受け取る）
 
@@ -16,7 +16,40 @@ export function initUI(redrawFn) {
 	document.getElementById("modal").addEventListener("click", (e) => {
 		if (e.target.id === "modal") closeModal();   // 背景クリックで閉じる
 	});
+	document.getElementById("webhook-save").addEventListener("click", saveWebhookUrl);
+	initWebhookUI();
 	refresh();
+}
+
+// ── Slack 通知先 ──
+// 入室・離席・着席・退出を Slack に流す。未登録なら送信しない。
+// URL は認証情報なのでサーバーから返ってこない。入力欄は常に空で始まる。
+function showWebhookState(text, isError) {
+	const el = document.getElementById("webhook-state");
+	if (!el) return;
+	el.textContent = text;
+	el.classList.toggle("dirty", !!isError);
+}
+
+async function initWebhookUI() {
+	const r = await loadWebhook();
+	showWebhookState(r.configured ? `設定済み（${r.hint || ""}）` : "未設定（通知しません）");
+}
+
+async function saveWebhookUrl() {
+	const input = document.getElementById("webhook-url");
+	const btn = document.getElementById("webhook-save");
+	const url = (input.value || "").trim();
+	btn.disabled = true;
+	showWebhookState("保存中…");
+	const r = await saveWebhook(url);
+	btn.disabled = false;
+	if (!r.ok) {
+		showWebhookState(r.error || "保存に失敗しました", true);
+		return;
+	}
+	input.value = "";   // 画面に URL を残さない
+	showWebhookState(r.configured ? `設定済み（${r.hint || ""}）` : "未設定（通知しません）");
 }
 
 // ── 表示切替・保存モード・反映 ──

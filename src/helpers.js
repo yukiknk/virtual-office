@@ -1,6 +1,6 @@
 // 状態を持たない純粋関数のまとめ（レスポンス生成・入力検証・転送量推定など）
 
-import { GB, AUDIO_BPS, SCREEN_BPS, SCREEN_OFF_GB, VOICE_OFF_GB, NEAR } from "./config.js";
+import { GB, AUDIO_BPS, SCREEN_BPS, SCREEN_OFF_GB, VOICE_OFF_GB, NEAR, SLACK_WEBHOOK_PREFIX } from "./config.js";
 
 // JSON レスポンスを作る
 export function json(body, status = 200) {
@@ -38,6 +38,26 @@ export function cleanComment(c) {
     italic: !!c.italic,
     expireAt: Number.isFinite(+c.expireAt) ? Math.floor(+c.expireAt) : null,   // 消える日時（ms）。無ければ null
   };
+}
+
+// ── Slack 通知 ──
+
+// KV から Webhook URL を取り出す。未登録・壊れたデータ・想定外のホストなら空文字。
+// 保存時にも接頭辞を検査しているが、KV を直接書き換えられた場合に備えて読み出し側でも見る。
+export async function readWebhookUrl(env) {
+  try {
+    const raw = await env.LAYOUT_KV.get("webhook");
+    if (!raw) return "";
+    const u = String(JSON.parse(raw).url || "");
+    return u.startsWith(SLACK_WEBHOOK_PREFIX) ? u : "";
+  } catch { return ""; }
+}
+
+// Slack の text に入れる文字列を無害化する。
+// 氏名は利用者が自由に入力できるため、そのまま入れると <!channel> のような
+// 制御記法が効いてしまう。Slack の仕様どおり & < > だけを実体参照に置き換える。
+export function escapeSlack(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // 月キー（UTC。転送量の月替わり判定に使う）

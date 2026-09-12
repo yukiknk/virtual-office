@@ -55,6 +55,25 @@ export function saveFurniture() {
 	}).catch((e) => console.warn("家具保存失敗", e));
 }
 
+// ── Slack 通知先（Webhook URL） ──
+// URL 自体はサーバーから返ってこない（設定済みかどうかと末尾だけ）。
+export async function loadWebhook() {
+	try { return await (await fetch("/api/webhook")).json(); } catch { return { configured: false }; }
+}
+
+// url に空文字を渡すと登録解除。戻り値 { ok, configured, hint, error }
+export async function saveWebhook(url) {
+	try {
+		const res = await fetch("/api/webhook", {
+			method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
+		});
+		const body = await res.json().catch(() => ({}));
+		return { ok: res.ok, ...body };
+	} catch (e) {
+		return { ok: false, error: "通信に失敗しました" };
+	}
+}
+
 // ── コメント（メモ） ──
 export async function loadComments() {
 	try { store.comments = await (await fetch("/api/comments")).json(); } catch { store.comments = []; }

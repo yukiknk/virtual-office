@@ -283,6 +283,24 @@ body {
 	cursor: default;
 }
 
+/* Slack 通知先の入力欄 */
+#webhook-url {
+	display: block;
+	width: 100%;
+	margin-bottom: 6px;
+	padding: 8px 9px;
+	border: 1px solid #b4bbb0;
+	border-radius: 8px;
+	background: #fff;
+	color: #141815;
+	font-family: inherit;
+	font-size: 11px;
+}
+
+#webhook-url::placeholder {
+	color: #9aa397;
+}
+
 .tab {
 	display: block;
 	width: 100%;

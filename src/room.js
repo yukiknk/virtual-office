@@ -2,7 +2,7 @@
 // 1つのインスタンスに全員が接続する（src/index.js が idFromName("main") で選ぶ）。
 
 import { GB, LIMIT_GB, NEAR } from "./config.js";
-import { json, cleanAvatar, cleanComment, monthKey, levelFor, zoneIdAtWorld, bytesPerSec } from "./helpers.js";
+import { json, cleanAvatar, cleanComment, monthKey, levelFor, zoneIdAtWorld, bytesPerSec, readWebhookUrl, escapeSlack } from "./helpers.js";
 
 export class Room {
   constructor(ctx, env) {
@@ -23,6 +23,21 @@ export class Room {
     if (url.pathname.startsWith("/rtc/")) return this.handleRtc(req, url);
     if (url.pathname === "/api/refresh") { this.broadcastReload(); return new Response("ok"); }
     return new Response("Not found", { status: 404 });
+  }
+
+  // ── Slack 通知（入室・離席・着席・退出） ──
+  // 送信先が未登録なら何もしない。通知の失敗でオフィス側の動作を止めないよう、
+  // 例外はすべてここで握って捨てる。
+  async notify(text) {
+    const url = await readWebhookUrl(this.env);
+    if (!url) return;
+    try {
+      await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+    } catch { }
   }
 
   // 管理者の「反映」：全利用者に再取得を促す（音声・接続はそのまま）
@@ -109,6 +124,7 @@ export class Room {
       await this.ensureComments();
       ws.send(JSON.stringify({ t: "comments", list: this.comments }));   // 入室時に現在のコメントを送る
       this.schedule();
+      await this.notify(`${escapeSlack(att.name)}さんがスペースに入室しました。`);
     } else if (msg.t === "comment_add") {
       await this.ensureComments();
       const c = cleanComment(msg.comment);
@@ -133,10 +149,15 @@ export class Room {
       const text = String(msg.text || "").slice(0, 500).trim();
       if (text) await this.relayChat(att, text);
     } else if (msg.t === "away") {
-      att.away = !!msg.away;
+      const next = !!msg.away;
+      const changed = next !== !!att.away;   // 同じ状態の送り直しでは通知しない
+      att.away = next;
       att.awayMsg = att.away ? String(msg.msg || "").slice(0, 100) : "";
       ws.serializeAttachment(att);
       this.schedule();   // 離席状態を全員へ配信
+      if (changed && att.name) {
+        await this.notify(`${escapeSlack(att.name)}さんが${next ? "離席" : "着席"}しました。`);
+      }
     } else if (msg.t === "pos") {
       this.positions.set(att.id, { x: Number(msg.x) || 0, y: Number(msg.y) || 0 });
       this.schedule();
@@ -156,12 +177,16 @@ export class Room {
     }
   }
 
-  webSocketClose(ws) { this.drop(ws); }
-  webSocketError(ws) { this.drop(ws); }
-  drop(ws) {
+  async webSocketClose(ws) { await this.drop(ws); }
+  async webSocketError(ws) { await this.drop(ws); }
+  async drop(ws) {
     const att = ws.deserializeAttachment();
     if (att) this.positions.delete(att.id);
     this.schedule();
+    // 名前が無い＝入室前に切れた接続なので通知しない
+    if (att && att.name) {
+      await this.notify(`${escapeSlack(att.name)}さんがスペースから退出しました。`);
+    }
   }
 
   schedule() {
