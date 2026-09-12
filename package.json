@@ -13,9 +13,11 @@
     "kv:create-beta": "wrangler kv namespace create LAYOUT_KV --env beta",
     "kv:copy-to-beta": "node scripts/copy-kv-to-beta.mjs",
     "secret:beta": "wrangler secret put --env beta",
-    "avatar-manifest": "node scripts/gen-avatar-manifest.mjs"
+    "avatar-manifest": "node scripts/gen-avatar-manifest.mjs",
+    "credits": "node scripts/gen-credits.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.131.1"
-  }
+  },
+  "license": "MIT"
 }

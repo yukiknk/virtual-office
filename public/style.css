@@ -775,6 +775,19 @@ body {
 	margin-bottom: 10px;
 }
 
+/* 素材クレジットへの導線（表示義務のため、アプリからも辿れるようにする） */
+#credits-link {
+	display: block;
+	font-size: 11px;
+	color: #737a70;
+	text-decoration: underline;
+	margin-bottom: 10px;
+}
+
+#credits-link:hover {
+	color: #141815;
+}
+
 .usage-label {
 	font-size: 11px;
 	color: #737a70;
