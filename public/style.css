@@ -301,6 +301,17 @@ body {
 	color: #9aa397;
 }
 
+/* 保存と削除を横並びにする */
+.webhook-actions {
+	display: flex;
+	gap: 6px;
+}
+
+.webhook-actions button {
+	width: auto;
+	flex: 1;
+}
+
 .tab {
 	display: block;
 	width: 100%;

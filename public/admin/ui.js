@@ -17,6 +17,7 @@ export function initUI(redrawFn) {
 		if (e.target.id === "modal") closeModal();   // 背景クリックで閉じる
 	});
 	document.getElementById("webhook-save").addEventListener("click", saveWebhookUrl);
+	document.getElementById("webhook-clear").addEventListener("click", clearWebhookUrl);
 	initWebhookUI();
 	refresh();
 }
@@ -31,25 +32,44 @@ function showWebhookState(text, isError) {
 	el.classList.toggle("dirty", !!isError);
 }
 
-async function initWebhookUI() {
-	const r = await loadWebhook();
-	showWebhookState(r.configured ? `設定済み（${r.hint || ""}）` : "未設定（通知しません）");
+// 登録状況を画面に反映する。未登録なら削除ボタンは押せない
+// （URL は画面に出ないので、誤って消すと貼り直すしかないため）。
+let webhookConfigured = false;
+function applyWebhookState(r) {
+	webhookConfigured = !!r.configured;
+	showWebhookState(webhookConfigured ? `設定済み（${r.hint || ""}）` : "未設定（通知しません）");
+	const clearBtn = document.getElementById("webhook-clear");
+	if (clearBtn) clearBtn.disabled = !webhookConfigured;
 }
 
-async function saveWebhookUrl() {
-	const input = document.getElementById("webhook-url");
-	const btn = document.getElementById("webhook-save");
-	const url = (input.value || "").trim();
-	btn.disabled = true;
-	showWebhookState("保存中…");
+async function initWebhookUI() {
+	applyWebhookState(await loadWebhook());
+}
+
+// 共通の送信処理。url が空文字なら登録解除になる。
+async function submitWebhook(url) {
+	const saveBtn = document.getElementById("webhook-save");
+	const clearBtn = document.getElementById("webhook-clear");
+	saveBtn.disabled = true;
+	clearBtn.disabled = true;
+	showWebhookState(url ? "保存中…" : "削除中…");
 	const r = await saveWebhook(url);
-	btn.disabled = false;
+	saveBtn.disabled = false;
 	if (!r.ok) {
-		showWebhookState(r.error || "保存に失敗しました", true);
+		showWebhookState(r.error || (url ? "保存に失敗しました" : "削除に失敗しました"), true);
+		clearBtn.disabled = !webhookConfigured;   // 登録状況は変わっていないので元に戻す
 		return;
 	}
-	input.value = "";   // 画面に URL を残さない
-	showWebhookState(r.configured ? `設定済み（${r.hint || ""}）` : "未設定（通知しません）");
+	document.getElementById("webhook-url").value = "";   // 画面に URL を残さない
+	applyWebhookState(r);
+}
+
+function saveWebhookUrl() {
+	return submitWebhook((document.getElementById("webhook-url").value || "").trim());
+}
+
+function clearWebhookUrl() {
+	return submitWebhook("");
 }
 
 // ── 表示切替・保存モード・反映 ──

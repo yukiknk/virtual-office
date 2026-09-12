@@ -45,7 +45,10 @@
 				<div class="group-label">Slack 通知</div>
 				<input type="text" id="webhook-url" autocomplete="off" spellcheck="false"
 					placeholder="https://hooks.slack.com/services/..." />
-				<button type="button" id="webhook-save">保存</button>
+				<div class="webhook-actions">
+					<button type="button" id="webhook-save">保存</button>
+					<button type="button" id="webhook-clear" class="danger">削除</button>
+				</div>
 				<div id="webhook-state" class="savestate">確認中…</div>
 			</div>
 		</aside>
