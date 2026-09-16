@@ -958,3 +958,73 @@ body {
 #link-prompt[hidden] {
 	display: none;
 }
+
+/* ── 呼び出し ── */
+
+/* 近くの人を呼ぶボタン。家具のプロンプトの一つ上に重ねる */
+#call-prompt {
+	position: absolute;
+	left: 50%;
+	bottom: 88px;
+	transform: translateX(-50%);
+	z-index: 30;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	max-width: 90%;
+}
+
+#call-prompt[hidden] {
+	display: none;
+}
+
+.call-btn {
+	padding: 10px 18px;
+	border: none;
+	border-radius: 12px;
+	background: #fff;
+	color: #141815;
+	font-family: inherit;
+	font-size: 14px;
+	font-weight: 700;
+	box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+	cursor: pointer;
+}
+
+.call-btn:hover:not(:disabled) {
+	background: #eff1ec;
+}
+
+.call-btn:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* 呼び出された側に出すバナー。数秒で消える */
+#call-alert {
+	position: absolute;
+	left: 50%;
+	top: 16px;
+	transform: translateX(-50%);
+	z-index: 40;
+	padding: 12px 20px;
+	border-radius: 12px;
+	background: #b23a2a;
+	color: #fff;
+	font-size: 14px;
+	font-weight: 700;
+	box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+	white-space: nowrap;
+}
+
+#call-alert[hidden] {
+	display: none;
+}
+
+/* チャット欄に混ざる呼び出しの記録 */
+.chat-msg.call {
+	background: #fbeee9;
+	color: #8d2e21;
+	font-size: 12px;
+	font-weight: 700;
+}

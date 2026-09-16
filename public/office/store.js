@@ -33,6 +33,7 @@ export const store = {
 	messages: [],         // チャット（新着が先頭・保存しない。退出で消える）
 	chatSeq: 0,           // 受信のたびに増やして再描画の判定に使う
 	officeComments: [],   // オフィスで作成（全員共有・誰でも削除可）
+	callAlert: null,      // 呼び出しを受けたときの画面バナー { name, at }。数秒で消す
 	// 自分（位置は論理座標）
 	me: { x: WORLD.w / 2, y: WORLD.h / 2, name: "ゲスト", away: false, awayMsg: "", dir: "down", moving: false, avatar: DEFAULT_AVATAR },
 	// 他の接続者 id -> { name, sfu, buf: [{at,x,y}] }

@@ -2,7 +2,8 @@
 import { SHEETS, store, rebuildBlocked } from "./store.js";
 import { connect, sendPos } from "./net.js";
 import { updateVoice, initVoiceUI } from "./voice.js";
-import { fit, draw, update, initInput, updateRoster, initCommentUI, initLinkPrompt, updateLinkPrompt, initChatUI, updateChat, initAwayUI, updateUsage, initPeopleUI, updatePeople, sweepExpiredComments } from "./scene.js";
+import { fit, draw, update, initInput, updateRoster, initCommentUI, initLinkPrompt, updateLinkPrompt, initChatUI, updateChat, initAwayUI, updateUsage, initPeopleUI, updatePeople, sweepExpiredComments, updateCallPrompt, updateCallAlert } from "./scene.js";
+import { initAlarm } from "./alarm.js";
 
 function loadSheets() {
 	for (const k of Object.keys(SHEETS)) {
@@ -34,6 +35,8 @@ function loop(t) {
 	if (t - lastVoice > 400) { lastVoice = t; updateVoice(); }
 	if (t - lastRoster > 500) { lastRoster = t; updateRoster(); updatePeople(); }
 	updateLinkPrompt();
+	updateCallPrompt();
+	updateCallAlert();
 	updateChat();
 	updateUsage();
 	draw();
@@ -73,5 +76,6 @@ initLinkPrompt();
 initChatUI();
 initAwayUI();
 initPeopleUI();
+initAlarm();
 fit();
 requestAnimationFrame(loop);

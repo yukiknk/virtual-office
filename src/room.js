@@ -1,7 +1,7 @@
 // 部屋（Durable Object）：位置の配信＋SFU中継＋転送量ガード。
 // 1つのインスタンスに全員が接続する（src/index.js が idFromName("main") で選ぶ）。
 
-import { GB, LIMIT_GB, NEAR } from "./config.js";
+import { GB, LIMIT_GB, NEAR, CALL_COOLDOWN_MS } from "./config.js";
 import { json, cleanAvatar, cleanComment, monthKey, levelFor, zoneIdAtWorld, bytesPerSec, readWebhookUrl, escapeSlack } from "./helpers.js";
 
 export class Room {
@@ -15,6 +15,7 @@ export class Room {
     this.budgetLevel = "ok";
     this.budgetLoaded = false;
     this.comments = null;         // オフィスで作られたコメント（全員共有）。遅延読み込み
+    this.callAt = new Map();      // 呼び出しの連打防止。"送信者id>相手id" -> 最後に送った時刻
   }
 
   async fetch(req) {
@@ -86,6 +87,37 @@ export class Room {
     }
   }
 
+  // 呼び出しの中継：相手にだけアラームを送り、送信者には控えを返す。
+  //
+  // 条件（近接・離席でない・連打でない）はクライアントでも見ているが、
+  // 画面の出し分けだけでは細工したメッセージを防げない。アラームが鳴る機能なので
+  // ここでも同じ条件を検査する。弾く場合は黙って捨てる。
+  relayCall(ws, att, toId) {
+    if (!att.name || typeof toId !== "string" || toId === att.id) return;
+
+    let target = null;
+    for (const w of this.ctx.getWebSockets()) {
+      const a = w.deserializeAttachment();
+      if (a && a.id === toId) { target = { ws: w, att: a }; break; }
+    }
+    if (!target || !target.att.name) return;
+    if (target.att.away) return;                                   // 離席中は呼び出せない
+
+    const me = this.positions.get(att.id);
+    const you = this.positions.get(toId);
+    if (!me || !you) return;
+    if (Math.hypot(you.x - me.x, you.y - me.y) > NEAR) return;      // 近くにいないと呼べない
+
+    const now = Date.now();
+    const key = `${att.id}>${toId}`;
+    if (now - (this.callAt.get(key) || 0) < CALL_COOLDOWN_MS) return;
+    this.callAt.set(key, now);
+    for (const [k, t] of this.callAt) if (now - t > CALL_COOLDOWN_MS) this.callAt.delete(k);
+
+    try { target.ws.send(JSON.stringify({ t: "called", name: att.name, at: now })); } catch { }
+    try { ws.send(JSON.stringify({ t: "call_sent", name: target.att.name, at: now })); } catch { }
+  }
+
   async handleWs(req) {
     if (req.headers.get("Upgrade") !== "websocket") {
       return new Response("expected websocket", { status: 426 });
@@ -148,6 +180,8 @@ export class Room {
       // 送信者と同じ会話エリア内、またはエリア外なら近接の人だけに配信（保存はしない）
       const text = String(msg.text || "").slice(0, 500).trim();
       if (text) await this.relayChat(att, text);
+    } else if (msg.t === "call") {
+      this.relayCall(ws, att, msg.to);
     } else if (msg.t === "away") {
       const next = !!msg.away;
       const changed = next !== !!att.away;   // 同じ状態の送り直しでは通知しない

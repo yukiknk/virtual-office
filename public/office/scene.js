@@ -1,7 +1,7 @@
 // 描画（マップ・タイル・エリア・アバター）とキーボード移動。
 import { GRID, WORLD, w2s, s2w, setViewport, drawBase, drawCommentBox } from "../map.js";
 import { store, SHEETS, zoneIdAt, DEFAULT_AVATAR } from "./store.js";
-import { sendComment, removeComment, sendChat, sendAway } from "./net.js";
+import { sendComment, removeComment, sendChat, sendAway, sendCall } from "./net.js";
 
 const stage = document.getElementById("stage");
 const canvas = document.getElementById("plan");
@@ -230,6 +230,62 @@ export function updateLinkPrompt() {
 		currentLink = null;
 		el.hidden = true;
 	}
+}
+
+// ── 呼び出し：近くにいる人にボタンを出す ──
+// 条件は「半径NEAR以内」かつ「離席中でない」。同じ条件をサーバーでも検査している。
+// 表示中のボタンを作り直すと押せなくなるので、顔ぶれが変わったときだけ組み直す。
+let callPromptKey = "";
+
+function nearbyCallTargets() {
+	const list = [];
+	for (const [id, o] of store.others) {
+		if (!o.name || o.away) continue;
+		const p = o.buf[o.buf.length - 1];
+		if (!p) continue;
+		const d = Math.hypot(p.x - store.me.x, p.y - store.me.y);
+		if (d <= NEAR) list.push({ id, name: o.name, d });
+	}
+	return list.sort((a, b) => a.d - b.d).slice(0, 3);   // 多すぎても押せないので近い順に3人まで
+}
+
+export function updateCallPrompt() {
+	const el = document.getElementById("call-prompt");
+	if (!el) return;
+	if (store.me.away) { el.hidden = true; callPromptKey = ""; return; }   // 離席中は呼び出さない
+
+	const targets = nearbyCallTargets();
+	const key = targets.map((t) => `${t.id}:${t.name}`).join("|");
+	if (key === callPromptKey) return;
+	callPromptKey = key;
+
+	if (!targets.length) { el.hidden = true; el.replaceChildren(); return; }
+
+	el.replaceChildren(...targets.map((t) => {
+		const btn = document.createElement("button");
+		btn.type = "button";
+		btn.className = "call-btn";
+		btn.textContent = `${t.name}さんを呼び出す`;
+		btn.addEventListener("click", () => {
+			sendCall(t.id);
+			btn.disabled = true;                                  // 連打防止（サーバー側でも弾く）
+			setTimeout(() => { btn.disabled = false; }, 10_000);
+		});
+		return btn;
+	}));
+	el.hidden = false;
+}
+
+// 呼び出しを受けたときの画面バナー。数秒で自然に消す。
+export function updateCallAlert() {
+	const el = document.getElementById("call-alert");
+	if (!el) return;
+	const a = store.callAlert;
+	if (!a) { if (!el.hidden) el.hidden = true; return; }
+	if (Date.now() - a.at > 8000) { store.callAlert = null; el.hidden = true; return; }
+	const text = `🔔 ${a.name}さんから呼び出しがあります`;
+	if (el.textContent !== text) el.textContent = text;
+	el.hidden = false;
 }
 
 export function update(dt) {
@@ -715,6 +771,10 @@ export function updateChat() {
 	lastChatSeq = store.chatSeq;
 	let html = "";
 	for (const m of store.messages) {   // 新着が先頭＝上から新しい順
+		if (m.kind === "call") {        // 呼び出しの記録は発言者名を出さず、見た目を分ける
+			html += `<div class="chat-msg call">${esc(m.text)}</div>`;
+			continue;
+		}
 		html += `<div class="chat-msg${m.self ? " self" : ""}"><span class="chat-name">${esc(m.name)}</span>${esc(m.text)}</div>`;
 	}
 	el.innerHTML = html;

@@ -1,6 +1,7 @@
 // WebSocket 接続：入室・全員の位置受信・自分の位置送信・転送量レベル受信。
 import { store, rebuildBlocked } from "./store.js";
 import { applyBudget, teardownSfu } from "./voice.js";
+import { playAlarm, showCallNotification } from "./alarm.js";
 
 export function connect() {
 	const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -50,6 +51,15 @@ function onMessage(ev) {
 		store.messages.unshift({ id: msg.id, name: msg.name, text: msg.text, self: msg.id === store.myId });
 		if (store.messages.length > 50) store.messages.length = 50;   // 上限
 		store.chatSeq++;
+	} else if (msg.t === "called") {
+		// 呼び出された：音・ブラウザ通知・画面のバナー・チャット欄への記録
+		playAlarm();
+		showCallNotification(msg.name);
+		store.callAlert = { name: msg.name, at: msg.at || Date.now() };
+		pushCallLog(`${hhmm(msg.at)} に${msg.name}さんから呼び出しがありました`);
+	} else if (msg.t === "call_sent") {
+		// 自分が呼び出した控え（音は鳴らさない）
+		pushCallLog(`${hhmm(msg.at)} に${msg.name}さんを呼び出しました`);
 	} else if (msg.t === "comments") {
 		store.officeComments = Array.isArray(msg.list) ? msg.list : [];   // オフィス作成コメントの全員共有
 	} else if (msg.t === "budget") {
@@ -64,6 +74,23 @@ function onMessage(ev) {
 		fetch("/api/comments").then((r) => r.json()).then((d) => { store.comments = d; }).catch(() => { });
 		fetch("/api/furniture").then((r) => r.json()).then((d) => { store.furniture = d; }).catch(() => { });
 	}
+}
+
+// 呼び出しの記録はチャット欄に混ぜて出す（kind: "call" で見た目を分ける）
+function hhmm(at) {
+	const d = new Date(Number.isFinite(+at) ? +at : Date.now());
+	return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+function pushCallLog(text) {
+	store.messages.unshift({ kind: "call", text });
+	if (store.messages.length > 50) store.messages.length = 50;
+	store.chatSeq++;
+}
+
+// 呼び出しを送る（近接・離席・連打はサーバー側でも検査される）
+export function sendCall(toId) {
+	const ws = store.ws;
+	if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: "call", to: toId }));
 }
 
 // オフィスコメントの追加・削除（サーバーが全員へ配信する）

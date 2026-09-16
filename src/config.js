@@ -12,3 +12,8 @@ export const NEAR = 64;               // 近接の半径（2マス＝64px）。o
 // 登録を許す Webhook URL の接頭辞。ここを狭めておくことで、
 // 管理APIが無認証のあいだも Worker を踏み台にした任意ホストへの POST を防ぐ。
 export const SLACK_WEBHOOK_PREFIX = "https://hooks.slack.com/services/";
+
+// ── 呼び出し ──
+// 同じ相手を続けて呼べない時間。アラームが鳴る機能なので、連打による
+// 嫌がらせを防ぐためにサーバー側で間隔を強制する。
+export const CALL_COOLDOWN_MS = 10_000;
