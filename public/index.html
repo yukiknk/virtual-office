@@ -112,11 +112,10 @@
 	</div>
 
 	<!--
-		body の最後に置く必要がある。
-		login.js は冒頭でいきなり getElementById を呼び、DOMContentLoaded を待たない。
-		head に移すと要素がまだ存在せず、その場で動かなくなる。
+		type="module" なので自動で defer される。
+		login.js は avatar-ui.js を、avatar-ui.js は avatar.js を import する。
 	-->
-	<script src="login.js"></script>
+	<script type="module" src="login.js"></script>
 </body>
 
 </html>
