@@ -1,10 +1,10 @@
 // マップの共通エンジン。オフィス画面（office/scene.js）と管理者ページ（admin/editor.js）が
 // 同じマップを同じ大きさで描くために、大きさの定数・座標変換・下地の描画をここに集めている。
 //
-// 座標は3種類あり、取り違えると表示が崩れる。
+// 座標は3種類
 //   ワールド座標 … マップ上の位置。画面の大きさに関係なく一定で、家具もコメントもこの値で保存する。
-//   画面座標     … キャンバス上の位置（CSSピクセル）。ワールド座標に倍率と余白を足したもの。
-//   実ピクセル   … ディスプレイの物理的な点。高解像度画面では CSSピクセル1つが2点以上になる。
+//   画面座標     … キャンバス上の位置。ワールド座標に倍率と余白を足したもの。
+//   実ピクセル   … ディスプレイの物理的な点。高解像度画面では画面座標1つが2点以上になる。
 //
 // 外から使うのは ワールド ⇄ 画面 の変換（w2s / s2w）だけ。
 // 実ピクセルは setViewport の中にしか出てこない。
@@ -24,8 +24,9 @@ export const WORLD = { w: COLS * GRID, h: ROWS * GRID };
 // 描く前に必ず setViewport を呼ぶこと。呼ばないと倍率1・余白0のまま描かれる。
 let scale = 1, offX = 0, offY = 0;
 
-// キャンバスの大きさ（CSSピクセル）に合わせて倍率と余白を決める。
+// キャンバスの表示上の大きさに合わせて倍率と余白を決める。
 // 画面サイズが変わるたびに呼び直す。
+// 渡すのは見た目の大きさで、canvas.width（実ピクセル）ではない。高解像度画面では値が違う。
 export function setViewport(w, h) {
 	const dpr = window.devicePixelRatio || 1;
 	// マップ全体が収まる倍率。横と縦で余る方に余白がつく。
@@ -34,7 +35,7 @@ export function setViewport(w, h) {
 	// 1点の隙間や重なりが出る。1マスが整数の実ピクセルになる倍率に丸めて防ぐ。
 	const cellDev = Math.max(1, Math.round(GRID * raw * dpr));   // 最低1点（w/h が 0 のとき倍率0になるのを防ぐ）
 	scale = cellDev / (GRID * dpr);
-	// 余白も同じ理由で実ピクセルの整数に丸める（丸めてから CSSピクセルに戻している）。
+	// 余白も同じ理由で実ピクセルの整数に丸める（丸めた値を画面座標に戻している）。
 	offX = Math.round(((w - WORLD.w * scale) / 2) * dpr) / dpr;
 	offY = Math.round(((h - WORLD.h * scale) / 2) * dpr) / dpr;
 }
@@ -54,7 +55,7 @@ export function s2w(canvas, clientX, clientY) {
 // 毎フレームの最初に呼ぶ下地。前のフレームを消す役目も兼ねる。
 // マップの外側の余白と、マップの床面を別の色で塗り分ける。
 export function drawBase(ctx, canvas) {
-	// canvas.width は実ピクセル。ここは CSSピクセル基準で描いているので高解像度画面では
+	// canvas.width は実ピクセル。ここは画面座標で描いているので高解像度画面では
 	// 必要より大きい矩形になるが、はみ出た分はキャンバス外なので捨てられる。
 	ctx.fillStyle = "#dfe3dd";
 	ctx.fillRect(0, 0, canvas.width, canvas.height);
