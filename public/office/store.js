@@ -1,5 +1,6 @@
 // オフィスページの共有状態。各モジュールがこの store を読み書きする。
 import { WORLD } from "../map.js";
+import { KEY, read, readJson } from "../storage.js";
 
 // 描画に使う画像シート
 // カテゴリのキーごとの画像シート（床と敷物は同じ floors.png を使う）
@@ -57,19 +58,20 @@ export const store = {
 export function rebuildBlocked() {
 	store.blocked = new Set(store.layout.filter((i) => i.layer === "block").map((i) => `${i.col},${i.row}`));
 }
-try {
-	store.me.name = localStorage.getItem("office.name") || "ゲスト";
-	store.micId = localStorage.getItem("office.micId") || null;
-	store.speakerId = localStorage.getItem("office.speakerId") || null;
-	const savedAv = JSON.parse(localStorage.getItem("office.avatar") || "null");
-	if (savedAv) store.me.avatar = { ...DEFAULT_AVATAR, ...savedAv };
-	// 前回退出した位置を復元（ワールド内にクランプ）
-	const savedPos = JSON.parse(localStorage.getItem("office.pos") || "null");
-	if (savedPos && Number.isFinite(savedPos.x) && Number.isFinite(savedPos.y)) {
-		store.me.x = Math.max(0, Math.min(WORLD.w, savedPos.x));
-		store.me.y = Math.max(0, Math.min(WORLD.h, savedPos.y));
-	}
-} catch { }
+// 入室画面で決めた内容を引き継ぐ
+store.me.name = read(KEY.name, "ゲスト");
+store.micId = read(KEY.micId, null);
+store.speakerId = read(KEY.speakerId, null);
+
+const savedAv = readJson(KEY.avatar);
+if (savedAv) store.me.avatar = { ...DEFAULT_AVATAR, ...savedAv };
+
+// 前回退出した位置を復元（ワールド内にクランプ）
+const savedPos = readJson(KEY.pos);
+if (savedPos && Number.isFinite(savedPos.x) && Number.isFinite(savedPos.y)) {
+	store.me.x = Math.max(0, Math.min(WORLD.w, savedPos.x));
+	store.me.y = Math.max(0, Math.min(WORLD.h, savedPos.y));
+}
 
 // 点がどの会話エリアにあるか（id または null）
 export function zoneIdAt(x, y) {

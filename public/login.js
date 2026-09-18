@@ -2,14 +2,10 @@
 //
 // アバターの選択UIは avatar-ui.js が担当する。ここは入室時に getAvatar() で受け取るだけ。
 //
-// オフィス画面へは localStorage 経由で引き継ぐ。キー名は office/store.js と一致させること。
-// 型の検査は無いので、片方だけ変えるとエラーも出ずに既定値へ落ちる。
-//   office.name      … 氏名
-//   office.micId     … マイクの deviceId
-//   office.speakerId … スピーカーの deviceId
-//   office.avatar    … アバターの選択（JSON）
+// オフィス画面へは localStorage 経由で引き継ぐ。キーと読み書きは storage.js にまとめてある。
 
 import { getAvatar, initAvatarUI } from "./avatar-ui.js";
+import { KEY, read, write, writeJson } from "./storage.js";
 
 const form = document.getElementById("gateform");
 const nm = document.getElementById("nm");
@@ -17,11 +13,7 @@ const micSel = document.getElementById("mic-select");
 const spkSel = document.getElementById("spk-select");
 const note = document.getElementById("dev-note");
 
-// localStorage はプライベートモードや設定によっては例外を投げる。
-// 読めなくても入室はできるので、この先も try で囲んで黙って諦める。
-try {
-	nm.value = localStorage.getItem("office.name") || "";
-} catch { }
+nm.value = read(KEY.name);
 
 // 氏名が空のあいだは入室ボタンを押せなくする
 const submitBtn = form.querySelector('button[type="submit"]');
@@ -42,11 +34,8 @@ async function initDevices() {
 		return;
 	}
 	const devices = await navigator.mediaDevices.enumerateDevices();
-	let savedMic = "", savedSpk = "";
-	try {
-		savedMic = localStorage.getItem("office.micId") || "";
-		savedSpk = localStorage.getItem("office.speakerId") || "";
-	} catch { }
+	const savedMic = read(KEY.micId);
+	const savedSpk = read(KEY.speakerId);
 	for (const d of devices) {
 		if (d.kind === "audioinput") addOption(micSel, d, savedMic);
 		else if (d.kind === "audiooutput") addOption(spkSel, d, savedSpk);
@@ -77,12 +66,10 @@ form.addEventListener("submit", (e) => {
 		return;
 	}
 
-	try {
-		localStorage.setItem("office.name", name);
-		localStorage.setItem("office.micId", micSel.value || "");
-		localStorage.setItem("office.speakerId", spkSel.value || "");
-		localStorage.setItem("office.avatar", JSON.stringify(getAvatar()));
-	} catch { }
+	write(KEY.name, name);
+	write(KEY.micId, micSel.value || "");
+	write(KEY.speakerId, spkSel.value || "");
+	writeJson(KEY.avatar, getAvatar());
 	location.href = "office.html";
 });
 
