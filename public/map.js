@@ -71,7 +71,10 @@ export function drawCommentBox(ctx, c) {
 	const w = b.x - a.x, h = b.y - a.y;
 	const r = Math.min(12 * scale, w / 2, h / 2);
 
+	// ctx は呼び出し元と共用なので、ここで変える設定（影・フォント・文字の揃え）を
+	// 関数の外へ持ち出さない。全体を save / restore で挟んで最後に元へ戻す。
 	ctx.save();
+
 	ctx.shadowColor = "rgba(0,0,0,0.18)";
 	ctx.shadowBlur = 6;
 	ctx.shadowOffsetY = 2;
@@ -79,7 +82,11 @@ export function drawCommentBox(ctx, c) {
 	ctx.roundRect(a.x, a.y, w, h, r);
 	ctx.fillStyle = c.bg || "#ffffff";
 	ctx.fill();
-	ctx.restore();
+
+	// 文字に枠と同じ影が付かないよう、描く前に影を消す
+	ctx.shadowColor = "transparent";
+	ctx.shadowBlur = 0;
+	ctx.shadowOffsetY = 0;
 
 	// 文字の大きさ・行間・余白にも scale を掛ける。掛けないと拡大時に文字だけ小さく残る。
 	const size = (c.size || 16) * scale;
@@ -95,6 +102,8 @@ export function drawCommentBox(ctx, c) {
 	// 行の集まり全体が枠の上下中央に来るよう、1行目の中心から描き始める
 	let yy = a.y + h / 2 - (lines.length * lineH) / 2 + lineH / 2;
 	for (const ln of lines) { ctx.fillText(ln, cx, yy); yy += lineH; }
+
+	ctx.restore();
 }
 
 // 文字を枠の幅で折り返して行の配列にする。
