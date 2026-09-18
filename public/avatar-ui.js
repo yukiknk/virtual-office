@@ -1,10 +1,10 @@
 // 入室画面のアバター作成UI。プレビューと、8レイヤーの選択。
 //
 // 素材の一覧は assets/avatar/manifest.json から読む。
-// このファイルは scripts/gen-avatar-manifest.mjs が生成するので、
+// manifest.json は scripts/gen-avatar-manifest.mjs が生成するので、
 // 素材を足したら `npm run avatar-manifest` を実行すること。
 //
-// 選んだ内容は getAvatar() で login.js に渡す。それ以外の接点はない。
+// 選んだ内容は getAvatar() で login.js に渡す。
 
 import { SPRITE, WALK_FRAMES, DIR_ROW, layerImg, onImageLoad, drawAvatar } from "./avatar.js";
 
@@ -51,7 +51,7 @@ export async function initAvatarUI() {
 	startPreviewAnim();
 }
 
-// ランダムに着せ替える。任意レイヤーは3割で「なし」にして、全部盛りになるのを避ける。
+// ランダムに着せ替える。任意レイヤーは3割で「なし」にする。
 function randomizeAvatar() {
 	if (!Object.keys(manifest).length) return;   // manifest がまだ読めていない
 	for (const { key } of LAYERS) {
@@ -208,7 +208,7 @@ function rowLabel(text) {
 }
 
 // 選択肢のサムネイル。1レイヤーだけを正面・静止ポーズで描いた小さなキャンバスを返す。
-// 画像が未読込のときは load を待って描く（このキャンバスだけ描き直せばよい）。
+// 画像が未読込のときは load を待って描く。
 function optThumb(cat, file) {
 	const cv = document.createElement("canvas");
 	cv.width = 72; cv.height = 72;

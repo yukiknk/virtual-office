@@ -25,8 +25,9 @@ export function orderFor(dir) {
 const cache = new Map();
 const onLoadCallbacks = [];
 
-// 画像が届いたときに呼ばれる処理を登録する。
-// 毎フレーム描き直す画面（オフィス）は不要。静止画を1回描く画面（入室）が使う。
+// 画像が読み終わったときに呼ぶ処理を登録する。
+// 画像は遅れて届くため、一度描いたきりの画面ではレイヤーが抜けたままになる。
+// 毎フレーム描き直すオフィス画面には不要で、入室画面のプレビューが使う。
 export function onImageLoad(fn) {
 	onLoadCallbacks.push(fn);
 }

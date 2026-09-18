@@ -51,7 +51,8 @@ async function initDevices() {
 		if (d.kind === "audioinput") addOption(micSel, d, savedMic);
 		else if (d.kind === "audiooutput") addOption(spkSel, d, savedSpk);
 	}
-	// 出力デバイスの選択に対応していないブラウザ（Firefox など）では候補が空になる
+	// enumerateDevices() が audiooutput を返さないブラウザでは候補が空になる。
+	// その場合はスピーカーを選べないので、欄ごと無効にする。
 	if (!spkSel.options.length) spkSel.disabled = true;
 }
 
@@ -70,7 +71,6 @@ form.addEventListener("submit", (e) => {
 	if (!name) return;
 
 	// 氏名に "admin" と入れると管理者ページへ移動する隠し動作。
-	// admin.html は直接URLを開けるので、これは認証ではなく単なる近道。
 	// 副作用として "admin" という氏名では入室できない。
 	if (name === "admin") {
 		location.href = "admin.html";
