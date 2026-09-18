@@ -2,30 +2,57 @@
 <html lang="ja">
 
 <head>
+	<!--
+		入室画面。
+
+		利用者はここで「氏名」「マイク／スピーカー」「アバター」を決め、
+		入室すると内容が localStorage に保存されて office.html へ移動する。
+
+		中身の組み立ては login.js が行う。
+		id が付いている要素は login.js から参照されるため、id を変えると画面が動かなくなる。
+	-->
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+	<!-- タブに出る文字の既定値。config.jsの値に上書きされる -->
 	<title data-config-title="バーチャルオフィス">バーチャルオフィス</title>
+
+	<!-- 画面全体の書体を丸ゴシックに設定。preconnect を入れることで表示が早くなる -->
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 	<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap" rel="stylesheet" />
+
+	<!-- ログイン画面のスタイルをlogin.cssから読み込む -->
 	<link rel="stylesheet" href="login.css" />
+
+	<!--
+		表示文言の設定。
+		  config.js       … 汎用の既定値を定義する（github公開用）
+		  config.local.js … 組織名などを上書きする（github管理外）
+	-->
 	<script src="config.js"></script>
 	<script src="config.local.js"></script>
 </head>
 
 <body>
 	<div class="page">
+		<!-- ヘッダー。brand-badge の中身の無い span 4つは、CSS で色を付けて
+		     2×2 のロゴ風タイルにするための飾り。 -->
 		<header class="brand">
 			<div class="brand-badge" aria-hidden="true">
 				<span></span><span></span><span></span><span></span>
 			</div>
 			<div class="brand-text">
+				<!-- 「デモオフィス」は公開リポジトリ向けの既定値。 -->
 				<p class="brand-title" data-config="orgName">デモオフィス</p>
 				<p class="brand-sub">バーチャルオフィス</p>
 			</div>
 		</header>
 
+		<!-- 本体はカード2枚。アバター作成と、氏名・デバイスの入力。 -->
 		<main class="cards">
+
+			<!-- ── カード1：アバターを設定 ── -->
 			<section id="avatar-setup" class="card">
 				<div class="card-head">
 					<h2 class="card-title">アバターを設定</h2>
@@ -33,22 +60,31 @@
 				</div>
 				<div class="av-main">
 					<div class="av-stage">
+						<!-- 歩行アニメのプレビュー。128×128 は表示サイズで、
+						     素材のスプライトシートは1コマ 64×64。login.js で拡大して描く。 -->
 						<canvas id="av-preview" width="128" height="128"></canvas>
 					</div>
+					<!-- login.js が「頭/髪/体/…」8個のレイヤー選択ボタンを作って入れる。 -->
 					<div id="av-layers"></div>
 				</div>
+				<!-- レイヤーを選ぶと login.js が種類と色の選択肢を作って入れる。
+				     選ぶまでは閉じておきたいので hidden を付ける。 -->
 				<div id="av-picker" hidden></div>
 			</section>
 
+			<!-- ── カード2：氏名とデバイス ── -->
+			<!-- div ではなく form にしてある。送信は login.js が submit イベントで受け取る。 -->
 			<form id="gateform" class="card">
 				<h2 class="card-title">氏名とデバイス</h2>
 
 				<div class="field">
 					<label for="nm">氏名</label>
+					<!-- maxlength="20" はサーバー側（src/room.js）の氏名20文字制限と揃えてある。 -->
 					<input id="nm" maxlength="20" autocomplete="off" placeholder="例：山田太郎"
 						data-config-placeholder="namePlaceholder" />
 				</div>
 
+				<!-- login.js がマイク許可を得たあと、利用できるデバイスを option として流し込む。 -->
 				<div class="field">
 					<label for="mic-select">マイク</label>
 					<select id="mic-select"></select>
@@ -59,18 +95,27 @@
 					<select id="spk-select"></select>
 				</div>
 
+				<!-- マイクが許可されなかったときだけ login.js が文言を入れる。 -->
 				<p id="dev-note"></p>
 
+				<!-- type="submit" なので、Enter キーでの送信は form の標準動作 -->
 				<button type="submit" class="primary-btn">入室する</button>
 				<p class="hint">Enter キーでも入室できます</p>
 			</form>
 		</main>
 
+		<!-- 素材のライセンス表示。表示義務があるので消さないこと。
+		     詳細は public/assets/CREDITS.md を参照。 -->
 		<footer class="page-foot">
 			<a href="credits.html" target="_blank" rel="noopener">素材のクレジット</a>
 		</footer>
 	</div>
 
+	<!--
+		body の最後に置く必要がある。
+		login.js は冒頭でいきなり getElementById を呼び、DOMContentLoaded を待たない。
+		head に移すと要素がまだ存在せず、その場で動かなくなる。
+	-->
 	<script src="login.js"></script>
 </body>
 
