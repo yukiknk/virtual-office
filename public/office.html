@@ -2,36 +2,68 @@
 <html lang="ja">
 
 <head>
+	<!--
+		オフィス画面。入室画面（index.html）から移動してくる。
+
+		中身の組み立ては office/ 以下のモジュールが行い、担当が分かれている。
+		  office/scene.js … メニューバー・キャンバス・モーダルのほぼ全部
+		  office/voice.js … 音声と画面共有（#dock #banner #shares #share-big）
+		id が付いている要素はそれらから参照されるため、id を変えると画面が動かなくなる。
+	-->
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+	<!-- タブに出る文字の既定値。config.jsの値に上書きされる -->
 	<title data-config-title="バーチャルオフィス">バーチャルオフィス</title>
+
+	<!-- 画面全体の書体を丸ゴシックに設定。preconnect を入れることで表示が早くなる -->
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 	<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700&display=swap" rel="stylesheet" />
+
+	<!-- オフィス画面のスタイル。管理者ページ（admin.html）と共用している -->
 	<link rel="stylesheet" href="style.css" />
+
+	<!--
+		表示文言の設定。
+		  config.js       … 汎用の既定値を定義する（github公開用）
+		  config.local.js … 組織名などを上書きする（github管理外）
+	-->
 	<script src="config.js"></script>
 	<script src="config.local.js"></script>
 </head>
 
 <body>
+	<!-- 画面全体の2カラム（左メニューバー＋右オフィス）。
+	     id="admin" は管理者ページを先に作ったときの名残で、このページとは無関係。 -->
 	<div id="admin">
-		<!-- メニューバー -->
+
+		<!-- 左のメニューバー。中身が空の div は scene.js が後から埋める枠。 -->
 		<aside id="rail">
 			<h2 class="rail-h" data-config="orgName">デモオフィス</h2>
-			<div id="roster"></div>
+			<div id="roster"></div>   <!-- 在室者の一覧 -->
 			<button type="button" id="people-btn">勤務者一覧</button>
+
 			<div class="rail-sub">チャット</div>
-			<div id="chat-log"></div>
+			<div id="chat-log"></div>   <!-- 新着が上に積まれる。保存しないので退出で消える -->
+
+			<!-- 文字数の上限はサーバー側（src/room.js）でも切っている。
+			     ここを変えるだけでは効かないので、変更するときは両方を合わせること。 -->
 			<form id="chat-form">
 				<textarea id="chat-input" placeholder="メッセージ" maxlength="500"></textarea>
 				<button type="submit" id="chat-send">送信</button>
 			</form>
+
 			<button type="button" id="comment-add-btn">看板を作成</button>
-			<div id="usage"></div>
+			<div id="usage"></div>   <!-- 今月の転送量 -->
 			<div id="actions">
 				<button type="button" id="away-btn" class="actbtn">離席</button>
 				<button type="button" id="leave-btn" class="actbtn danger">退出</button>
 			</div>
+
+			<!-- ここ2つだけ voice.js の担当。
+			     ic（アイコン）と lb（ラベル）を分けてあるのは、状態に応じて
+			     voice.js が両方を書き換えるため。 -->
 			<div id="dock">
 				<button type="button" id="mic-btn" class="toolbtn">
 					<span class="ic">🔇</span>
@@ -44,18 +76,28 @@
 			</div>
 		</aside>
 
-		<!-- オフィス -->
+		<!-- オフィス本体。#stage と #plan は管理者ページと同じ id を使っており、
+		     style.css と、scene.js / admin/editor.js が同じ名前で取得している。 -->
 		<section id="stage">
-			<div id="banner"></div>
+			<div id="banner"></div>   <!-- 音声・画面共有の状態表示（voice.js） -->
+
+			<!-- width/height は飾り。scene.js が起動直後に画面サイズから計算し直す。
+			     JS が走る前の一瞬だけ形が保たれるように書いてある。 -->
 			<canvas id="plan" width="640" height="480"></canvas>
-			<div id="shares"></div>
+
+			<div id="shares"></div>   <!-- 共有画面の小窓（voice.js） -->
 			<div id="share-big"><video autoplay playsinline muted></video></div>
-			<div id="call-alert" hidden></div>
-			<div id="call-prompt" hidden></div>
-			<div id="link-prompt" hidden>
+
+			<!-- 以下3つは hidden 属性で出し入れする。下のモーダル3つは .open クラス方式。
+			     背景を暗くするフェードが要るものだけ .open にしてある。 -->
+			<div id="call-alert" hidden></div>    <!-- 呼び出しを受けたときのバナー -->
+			<div id="call-prompt" hidden></div>   <!-- 近くの人を呼び出すボタン -->
+			<div id="link-prompt" hidden>         <!-- 看板の中のリンクを開く確認 -->
 				<span class="lp-text" id="link-label"></span>
 				<button type="button" class="lp-open" id="link-open">開く</button>
 			</div>
+
+			<!-- 勤務者一覧。表示は scene.js が .open クラスで切り替える。 -->
 			<div id="people-modal">
 				<div class="cmodal-box">
 					<div class="cmodal-head">勤務者一覧</div>
@@ -65,6 +107,8 @@
 					</div>
 				</div>
 			</div>
+
+			<!-- 離席中コメント。上限100文字はサーバー側とも合わせている。 -->
 			<div id="away-modal">
 				<div class="cmodal-box">
 					<div class="cmodal-head">💬 離席中のコメント</div>
@@ -74,11 +118,14 @@
 					</div>
 				</div>
 			</div>
-			<script type="module" src="office/main.js"></script>
 		</section>
 	</div>
 
-	<!-- コメント（看板）設定モーダル -->
+	<!-- 看板の作成・編集。画面全体を覆うので #admin の外に置いている。
+
+	     各入力を <label> で包んでいるので、ラベルをクリックすると入力欄に
+	     フォーカスが移る（for 属性が要らない書き方）。
+	     期限日時の select は中身が空で、選択肢は scene.js が作る。 -->
 	<div id="comment-modal">
 		<div class="cmodal-box">
 			<div class="cmodal-head" id="c-title">看板の作成</div>
@@ -134,6 +181,9 @@
 			</div>
 		</div>
 	</div>
+
+	<!-- type="module" は自動で defer 扱いになるので、DOM の構築を待ってから走る -->
+	<script type="module" src="office/main.js"></script>
 </body>
 
 </html>
