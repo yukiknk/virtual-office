@@ -2,6 +2,7 @@
 import { GRID, WORLD, w2s, s2w, setViewport, drawBase, drawCommentBox } from "../map.js";
 import { store, SHEETS, zoneIdAt, DEFAULT_AVATAR } from "./store.js";
 import { sendComment, removeComment, sendChat, sendAway, sendCall } from "./net.js";
+import { layerImg, drawAvatar } from "../avatar.js";
 
 const stage = document.getElementById("stage");
 const canvas = document.getElementById("plan");
@@ -526,20 +527,10 @@ function drawZones() {
 	}
 }
 
-// ── アバター（頭＋体のLPCスプライトを重ねて描く） ──
-const SPRITE = 64;                                        // シートの1フレーム(px)
-const DRAW_W = 56, DRAW_H = 56;                            // 表示サイズ（ワールドpx）
-const DIR_ROW = { up: 8, left: 9, down: 10, right: 11 };   // 歩行アニメの行
-
-// アバター画像のキャッシュ（カテゴリ/ファイル単位）
-const avatarCache = new Map();
-function layerImg(cat, file) {
-	if (!file || !/^[\w.\-]+\.png$/.test(file)) return null;
-	const src = `assets/avatar/${cat}/${file}`;
-	let e = avatarCache.get(src);
-	if (!e) { e = { img: new Image(), ready: false }; e.img.onload = () => { e.ready = true; }; e.img.src = src; avatarCache.set(src, e); }
-	return e;
-}
+// ── アバター ──
+// 画像の読み込みと8レイヤーの重ね描きは avatar.js にある（入室画面と共通）。
+// このファイルが持つのは、ワールド座標から画面上の描画先を求める部分だけ。
+const DRAW_W = 56, DRAW_H = 56;   // オフィス上でのアバターの大きさ（ワールドpx）
 
 function drawActor(wx, wy, name, color, opt = {}) {
 	const cfg = opt.avatar || DEFAULT_AVATAR;
@@ -547,25 +538,17 @@ function drawActor(wx, wy, name, color, opt = {}) {
 	const bodyImg = layerImg("body", cfg.body);
 
 	if (bodyImg && bodyImg.ready) {
-		const row = DIR_ROW[opt.dir || "down"] ?? 10;
-		const frame = opt.moving ? 1 + (Math.floor(Date.now() / 120) % 8) : 0;   // 0=静止、1〜8=歩行
-		const sx = frame * SPRITE, sy = row * SPRITE;
+		// 0コマ目は静止ポーズ。歩いているあいだだけ 1〜8 コマを繰り返す。
+		const frame = opt.moving ? 1 + (Math.floor(Date.now() / 120) % 8) : 0;
+		// ドット絵がにじまないよう、描画先をデバイス画素の格子に合わせる
 		const dpr = window.devicePixelRatio || 1;
 		const snap = (v) => Math.round(v * dpr) / dpr;
 		const wl = wx - DRAW_W / 2, wt = wy - DRAW_H + 6;   // 足元を(wx,wy)付近に、上へ立たせる
 		const a = w2s(wl, wt), b = w2s(wl + DRAW_W, wt + DRAW_H);
 		const x0 = snap(a.x), y0 = snap(a.y), x1 = snap(b.x), y1 = snap(b.y);
-		// 重ね順。後ろ向き（up）は羽を体の手前（背中側）、持ち物を体の奥に。
-		const order = (opt.dir === "up")
-			? ["accessory", "body", "shoes", "bottoms", "tops", "wings", "head", "hair"]
-			: ["wings", "body", "shoes", "bottoms", "tops", "head", "hair", "accessory"];
 		ctx.save();
-		if (opt.away) ctx.globalAlpha = 0.4;
-		ctx.imageSmoothingEnabled = false;
-		for (const cat of order) {
-			const e = layerImg(cat, cfg[cat]);
-			if (e && e.ready) ctx.drawImage(e.img, sx, sy, SPRITE, SPRITE, x0, y0, x1 - x0, y1 - y0);
-		}
+		if (opt.away) ctx.globalAlpha = 0.4;   // 離席中は薄く描く
+		drawAvatar(ctx, cfg, { dir: opt.dir || "down", frame, dx: x0, dy: y0, dw: x1 - x0, dh: y1 - y0 });
 		ctx.restore();
 		drawNamePill(wx, wt, name, color, opt.away);        // 名前は頭上に
 	} else {
