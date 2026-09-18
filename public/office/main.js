@@ -1,5 +1,6 @@
 // オフィスページの起動：画像・レイアウト・エリアを読み込み、接続とループを開始。
 import { SHEETS, store, rebuildBlocked } from "./store.js";
+import { KEY, writeJson } from "../storage.js";
 import { connect, sendPos } from "./net.js";
 import { updateVoice, initVoiceUI } from "./voice.js";
 import { fit, draw, update, initInput, updateRoster, initCommentUI, initLinkPrompt, updateLinkPrompt, initChatUI, updateChat, initAwayUI, updateUsage, initPeopleUI, updatePeople, sweepExpiredComments, updateCallPrompt, updateCallAlert } from "./scene.js";
@@ -56,9 +57,7 @@ setInterval(() => {
 
 // 現在位置を保存（退出・タブを閉じたとき用。退出ボタンも location 遷移で発火する）
 function savePos() {
-	try {
-		localStorage.setItem("office.pos", JSON.stringify({ x: Math.round(store.me.x), y: Math.round(store.me.y) }));
-	} catch { }
+	writeJson(KEY.pos, { x: Math.round(store.me.x), y: Math.round(store.me.y) });
 }
 window.addEventListener("beforeunload", savePos);
 window.addEventListener("pagehide", savePos);

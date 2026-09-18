@@ -7,6 +7,7 @@
 // 選んだ内容は getAvatar() で login.js に渡す。
 
 import { SPRITE, WALK_FRAMES, DIR_ROW, layerImg, onImageLoad, drawAvatar } from "./avatar.js";
+import { KEY, readJson } from "./storage.js";
 
 // 選択UIに並べるレイヤー。この順にボタンが出る。
 const LAYERS = [
@@ -37,10 +38,8 @@ export async function initAvatarUI() {
 		avatar[key] = (list.length && !DEFAULT_OFF.has(key)) ? list[0].file : null;
 	}
 	// 前回の選択があれば上書きする
-	try {
-		const saved = JSON.parse(localStorage.getItem("office.avatar") || "null");
-		if (saved) for (const { key } of LAYERS) if (key in saved) avatar[key] = saved[key];
-	} catch { }
+	const saved = readJson(KEY.avatar);
+	if (saved) for (const { key } of LAYERS) if (key in saved) avatar[key] = saved[key];
 
 	const randomBtn = document.getElementById("av-random");
 	if (randomBtn) randomBtn.addEventListener("click", randomizeAvatar);
