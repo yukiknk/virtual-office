@@ -1,4 +1,9 @@
-// 描画（マップ・タイル・エリア・アバター）とキーボード移動。
+// キャンバスへの描画と、マウスによる看板の操作。
+//
+// このファイルが唯一 ctx を持つ。左メニューなどの DOM は panel.js、
+// キーボードによる移動は move.js。
+//
+// 重ね順は draw() の6行がすべて。レイヤーを足すときはそこへ挿す。
 import { GRID, WORLD, w2s, s2w, setViewport, drawBase, drawCommentBox } from "../map.js";
 import { store, SHEETS, DEFAULT_AVATAR } from "./store.js";
 import { sendComment, removeComment } from "./net.js";
@@ -11,7 +16,10 @@ const canvas = document.getElementById("plan");
 const ctx = canvas.getContext("2d");
 
 const LERP_DELAY = 120;     // 他人は120ms過去を補間して滑らかに描く
-let hover = null;           // カーソルの論理座標（会話エリアのホバー・コメント削除用）
+
+// ポインタのイベントが書き、描画が読む状態。
+// hover は drawZones と drawComments が、drag* は drawComments が見る。
+let hover = null;           // カーソルのワールド座標。キャンバスの外へ出ると null
 let dragComment = null;     // 操作中のオフィス看板
 let dragMode = null;        // "move" | "resize"
 let dragCorner = null;      // リサイズ中の角（nw/ne/sw/se）
@@ -22,6 +30,13 @@ let dragMoved = false;      // しきい値を超えて動かしたか
 
 // ── マウス操作 ──
 // キーボードによる移動は move.js にある。
+//
+// 看板の操作は3つのイベントにまたがる状態機械になっている。
+//   pointerdown … つかむ（どの看板か・移動かリサイズか・つかんだ位置を控える）
+//   pointermove … 4px を超えて動かしたら dragMoved を立ててから反映する
+//   pointerup   … dragMoved が false なら「クリック」＝再編集、true なら全員へ共有
+// この 4px のしきい値が無いと、再編集しようとしたクリックが
+// 「1px 動かした」と見なされて共有に化ける。
 export function initPointer() {
 	window.addEventListener("resize", fit);
 
@@ -40,7 +55,8 @@ export function initPointer() {
 	});
 	canvas.addEventListener("pointerleave", () => { hover = null; });
 
-	// オフィス作成の看板：×で削除、四隅ドラッグで拡大縮小、内部ドラッグで移動、クリックで再編集
+	// オフィス作成の看板：×で削除、四隅ドラッグで拡大縮小、内部ドラッグで移動、クリックで再編集。
+	// 後ろから探すのは、重なっているとき手前の看板を先に拾うため（描画は前から＝後ろほど手前）。
 	canvas.addEventListener("pointerdown", (e) => {
 		const rect = canvas.getBoundingClientRect();
 		const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
@@ -55,7 +71,7 @@ export function initPointer() {
 			dragComment = c; dragStart = p; dragMoved = false;
 			if (corner) { dragMode = "resize"; dragCorner = corner; dragOrig = { x: c.x, y: c.y, w: c.w, h: c.h }; }
 			else { dragMode = "move"; dragOff = { x: p.x - c.x, y: p.y - c.y }; }
-			canvas.setPointerCapture(e.pointerId);
+			canvas.setPointerCapture(e.pointerId);   // キャンバスの外へドラッグしても pointermove を受け続ける
 			return;
 		}
 	});
@@ -115,7 +131,9 @@ function drawComments() {
 }
 function pointInRect(p, c) { return p.x >= c.x && p.x < c.x + c.w && p.y >= c.y && p.y < c.y + c.h; }
 
-// 消える日時を過ぎた看板か
+// 消える日時を過ぎた看板か。
+// 描画・pointerdown・dblclick・sweep の4か所で使う。期限切れの看板は
+// 「見えない・触れない・避けない」を全部満たす必要があるため。
 function isExpired(c) { return !!(c && c.expireAt && c.expireAt <= Date.now()); }
 
 // 期限切れの看板を削除依頼（サーバーが全員へ反映）。多重送信を防ぐ。
@@ -204,7 +222,7 @@ function drawWallsAndActors() {
 		actors.push({ x: p.x, y: p.y, name: o.name, color: "#b23a2a", away: o.away, awayMsg: o.awayMsg, dir: o.dir || "down", moving, avatar: o.avatar || DEFAULT_AVATAR });
 	}
 	actors.push({ x: store.me.x, y: store.me.y, name: store.me.name, color: "#1f3fb0", away: store.me.away, awayMsg: store.me.awayMsg, dir: store.me.dir, moving: store.me.moving, avatar: store.me.avatar });
-	actors.sort((a, b) => a.y - b.y);
+	actors.sort((a, b) => a.y - b.y);   // 南（下）にいる人ほど後に描く＝手前になる
 
 	// 3) アバターを描いた直後、そのアバターより上に来るべき壁だけを描き直す
 	for (const a of actors) {
@@ -222,7 +240,10 @@ function coverWalls(wx, wy, wallCells) {
 	const onWall = wallCells.has(`${ac},${ar}`);
 	for (const item of store.layout) {
 		if ((item.layer || "floor") !== "object") continue;
-		if (Math.abs(item.col - ac) > 4) continue;        // 名前の幅ぶんだけ見る（軽量化）
+		// 見る範囲を絞って軽くしている。数字はアバターの見た目の大きさから決めたもので、
+		// ±4列は名前ラベルの幅、-3〜+2行はアバター（56px≒2マス）＋名前ラベルの高さ。
+		// 狭めすぎると、壁の裏に隠れるべき頭やラベルがはみ出して見える。
+		if (Math.abs(item.col - ac) > 4) continue;
 		if (item.row < ar - 3 || item.row > ar + 2) continue;
 		const cover = onWall ? true : item.row > ar;      // 床なら南（下）側の壁だけ上
 		if (cover) drawTile(item);
@@ -299,6 +320,7 @@ function drawActor(wx, wy, name, color, opt = {}) {
 
 	if (bodyImg && bodyImg.ready) {
 		// 0コマ目は静止ポーズ。歩いているあいだだけ 1〜8 コマを繰り返す。
+		// Date.now() を基準にしているので、全員のアニメーションが自然に揃う。
 		const frame = opt.moving ? 1 + (Math.floor(Date.now() / 120) % 8) : 0;
 		// ドット絵がにじまないよう、描画先をデバイス画素の格子に合わせる
 		const dpr = window.devicePixelRatio || 1;
@@ -372,7 +394,9 @@ function drawAwayLabel(sx, sy, msg) {
 	ctx.textBaseline = "alphabetic";
 }
 
-// 履歴バッファから renderTime 時点の位置を線形補間で求める
+// 履歴バッファから renderTime 時点の位置を線形補間で求める。
+// LERP_DELAY だけ過去を描くことで、次の位置が届くまでの猶予を作っている。
+// 猶予を過ぎても次が来ていなければ、最後の位置で止める（行き過ぎて戻るより自然）。
 function renderPos(buf, renderTime) {
 	if (!buf || buf.length === 0) return null;
 	if (buf.length === 1) return { x: buf[0].x, y: buf[0].y };
