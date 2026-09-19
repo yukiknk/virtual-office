@@ -250,6 +250,17 @@ function coverWalls(wx, wy, wallCells) {
 	}
 }
 
+// ワールド座標の矩形を、実ピクセル格子に吸着させた画面座標の矩形にする。
+// ドット絵は4辺が半端な位置に来ると継ぎ目やにじみが出るので、整数に揃える。
+// タイル・家具・アバターの3か所が同じ吸着を必要とするのでここにまとめてある。
+function snapRect(wx, wy, ww, wh) {
+	const dpr = window.devicePixelRatio || 1;
+	const snap = (v) => Math.round(v * dpr) / dpr;
+	const a = w2s(wx, wy), b = w2s(wx + ww, wy + wh);
+	const x0 = snap(a.x), y0 = snap(a.y);
+	return { x: x0, y: y0, w: snap(b.x) - x0, h: snap(b.y) - y0 };
+}
+
 function drawLayer(layerKey) {
 	for (const item of store.layout) {
 		if ((item.layer || "floor") !== layerKey) continue;
@@ -262,26 +273,18 @@ function drawTile(item) {
 	const sheet = SHEETS[item.cat || "floor"];
 	if (!sheet || !sheet.ready) return;
 	ctx.imageSmoothingEnabled = false;
-	const dpr = window.devicePixelRatio || 1;
-	const snap = (v) => Math.round(v * dpr) / dpr;   // 実ピクセル格子に合わせて継ぎ目をなくす
-	const a = w2s(item.col * GRID, item.row * GRID);
-	const b = w2s((item.col + 1) * GRID, (item.row + 1) * GRID);
-	const x0 = snap(a.x), y0 = snap(a.y);
-	const x1 = snap(b.x), y1 = snap(b.y);
-	ctx.drawImage(sheet.img, item.tileCol * 32, item.tileRow * 32, 32, 32, x0, y0, x1 - x0, y1 - y0);
+	const r = snapRect(item.col * GRID, item.row * GRID, GRID, GRID);
+	ctx.drawImage(sheet.img, item.tileCol * 32, item.tileRow * 32, 32, 32, r.x, r.y, r.w, r.h);
 }
 
 // 家具（壁の一つ上）：配列順（後ろほど手前）に、シートの選択範囲を等倍で描く
 function drawFurniture() {
 	ctx.imageSmoothingEnabled = false;
-	const dpr = window.devicePixelRatio || 1;
-	const snap = (v) => Math.round(v * dpr) / dpr;
 	for (const f of store.furniture) {
 		const sheet = SHEETS[f.cat];
 		if (!sheet || !sheet.ready) continue;
-		const a = w2s(f.x, f.y), b = w2s(f.x + f.sw, f.y + f.sh);
-		const x0 = snap(a.x), y0 = snap(a.y), x1 = snap(b.x), y1 = snap(b.y);
-		ctx.drawImage(sheet.img, f.sx, f.sy, f.sw, f.sh, x0, y0, x1 - x0, y1 - y0);
+		const r = snapRect(f.x, f.y, f.sw, f.sh);
+		ctx.drawImage(sheet.img, f.sx, f.sy, f.sw, f.sh, r.x, r.y, r.w, r.h);
 	}
 }
 
@@ -292,18 +295,19 @@ function drawZones() {
 		const z = store.zones[i];
 		if (hover.x < z.x || hover.x >= z.x + z.w || hover.y < z.y || hover.y >= z.y + z.h) continue;
 		const a = w2s(z.x, z.y), b = w2s(z.x + z.w, z.y + z.h);
+		ctx.save();
 		ctx.fillStyle = "rgba(31,63,176,0.05)";
 		ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
 		ctx.strokeStyle = "rgba(31,63,176,0.35)";
 		ctx.lineWidth = 1.5;
 		ctx.setLineDash([6, 4]);
 		ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
-		ctx.setLineDash([]);
 		ctx.fillStyle = "rgba(31,63,176,0.6)";
 		ctx.font = "700 13px system-ui, 'Noto Sans JP', sans-serif";
 		ctx.textAlign = "left";
 		ctx.textBaseline = "top";
-		ctx.fillText(z.name, a.x + 4, a.y + 4);
+		ctx.fillText(z.name, a.x + 4, a.y + 4);   // 破線は塗りには効かないので、消さずにそのまま文字を描ける
+		ctx.restore();
 		break;   // 一番上のエリアだけ
 	}
 }
@@ -322,15 +326,11 @@ function drawActor(wx, wy, name, color, opt = {}) {
 		// 0コマ目は静止ポーズ。歩いているあいだだけ 1〜8 コマを繰り返す。
 		// Date.now() を基準にしているので、全員のアニメーションが自然に揃う。
 		const frame = opt.moving ? 1 + (Math.floor(Date.now() / 120) % 8) : 0;
-		// ドット絵がにじまないよう、描画先をデバイス画素の格子に合わせる
-		const dpr = window.devicePixelRatio || 1;
-		const snap = (v) => Math.round(v * dpr) / dpr;
 		const wl = wx - DRAW_W / 2, wt = wy - DRAW_H + 6;   // 足元を(wx,wy)付近に、上へ立たせる
-		const a = w2s(wl, wt), b = w2s(wl + DRAW_W, wt + DRAW_H);
-		const x0 = snap(a.x), y0 = snap(a.y), x1 = snap(b.x), y1 = snap(b.y);
+		const r = snapRect(wl, wt, DRAW_W, DRAW_H);
 		ctx.save();
 		if (opt.away) ctx.globalAlpha = 0.4;   // 離席中は薄く描く
-		drawAvatar(ctx, cfg, { dir: opt.dir || "down", frame, dx: x0, dy: y0, dw: x1 - x0, dh: y1 - y0 });
+		drawAvatar(ctx, cfg, { dir: opt.dir || "down", frame, dx: r.x, dy: r.y, dw: r.w, dh: r.h });
 		ctx.restore();
 		drawNamePill(wx, wt, name, color, opt.away);        // 名前は頭上に
 	} else {
@@ -366,20 +366,20 @@ function drawNamePill(wx, wtop, name, color, away) {
 	ctx.lineWidth = 1.5; ctx.strokeStyle = color; ctx.stroke();
 	ctx.fillStyle = "#141815";
 	ctx.fillText(name, cx, cy + 0.5);
-	ctx.restore();
-	ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+	ctx.restore();   // font・文字の揃え・globalAlpha はここで呼び出し元の値に戻る
 }
 
 // 離席バッジ＋理由をアバターの下に表示
 function drawAwayLabel(sx, sy, msg) {
+	ctx.save();
 	ctx.font = "600 11px 'M PLUS Rounded 1c', system-ui, 'Noto Sans JP', sans-serif";
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
+	// 長い理由は末尾を削って「…」に収める（幅186pxまで）
 	let text = "離席中" + (msg ? "：" + msg : "");
 	while (text.length > 4 && ctx.measureText(text).width > 186) text = text.slice(0, -2) + "…";
 	const w = ctx.measureText(text).width + 14;
 	const h = 18, cx = sx, cy = sy + 22;
-	ctx.save();
 	ctx.shadowColor = "rgba(0,0,0,0.25)";
 	ctx.shadowBlur = 4;
 	ctx.shadowOffsetY = 1;
@@ -387,11 +387,13 @@ function drawAwayLabel(sx, sy, msg) {
 	ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2);
 	ctx.fillStyle = "#4a5046";
 	ctx.fill();
-	ctx.restore();
+	// 文字に枠と同じ影が付かないよう、描く前に影を消す
+	ctx.shadowColor = "transparent";
+	ctx.shadowBlur = 0;
+	ctx.shadowOffsetY = 0;
 	ctx.fillStyle = "#fff";
 	ctx.fillText(text, cx, cy + 0.5);
-	ctx.textAlign = "left";
-	ctx.textBaseline = "alphabetic";
+	ctx.restore();
 }
 
 // 履歴バッファから renderTime 時点の位置を線形補間で求める。
