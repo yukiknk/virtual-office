@@ -42,14 +42,14 @@ export const store = {
 	//   comments       … 管理者ページで作成。KV に保存。オフィスからは編集・削除できない
 	//   officeComments … オフィスで作成。Durable Object に保存。誰でも削除できる
 	comments: [],
+	officeComments: [],
 
 	messages: [],         // チャット（新着が先頭・保存しない。退出で消える）
 	chatSeq: 0,           // 受信のたびに増やして再描画の判定に使う
-	officeComments: [],
 	callAlert: null,      // 呼び出しを受けたときの画面バナー { name, at }。数秒で消す
 
 	// ── 自分（位置はワールド座標） ──
-	me: { x: WORLD.w / 2, y: WORLD.h / 2, name: "ゲスト", away: false, awayMsg: "", dir: "down", moving: false, avatar: DEFAULT_AVATAR },
+	me: { x: WORLD.w / 2, y: WORLD.h / 2, name: "ゲスト", away: false, awayMsg: "", dir: "down", moving: false, avatar: { ...DEFAULT_AVATAR } },
 
 	// ── 他の接続者 ──
 	// id -> { name, sfu, buf: [{at,x,y}] }
@@ -75,11 +75,6 @@ export const store = {
 	blocked: new Set(),
 };
 
-// layout から通行禁止マスの集合を作り直す。layout が届く・更新されるたびに呼ぶ。
-export function rebuildBlocked() {
-	store.blocked = new Set(store.layout.filter((i) => i.layer === "block").map((i) => `${i.col},${i.row}`));
-}
-
 // ── 入室画面からの引き継ぎ（import 時に1回だけ走る） ──
 
 store.me.name = read(KEY.name, "ゲスト");
@@ -98,6 +93,11 @@ const savedPos = readJson(KEY.pos);
 if (savedPos && Number.isFinite(savedPos.x) && Number.isFinite(savedPos.y)) {
 	store.me.x = Math.max(0, Math.min(WORLD.w, savedPos.x));
 	store.me.y = Math.max(0, Math.min(WORLD.h, savedPos.y));
+}
+
+// layout から通行禁止マスの集合を作り直す。layout が届く・更新されるたびに呼ぶ。
+export function rebuildBlocked() {
+	store.blocked = new Set(store.layout.filter((i) => i.layer === "block").map((i) => `${i.col},${i.row}`));
 }
 
 // 点がどの会話エリアの中にあるか（id または null）。
