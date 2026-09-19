@@ -1,12 +1,22 @@
 // サーバー側で共有する定数（転送量ガードの設定など）
 
+// マップの大きさ。public/map.js の COLS*GRID / ROWS*GRID と一致させること。
+// サーバーからは public/ を import できないので、同じ値を二重に持っている。
+export const WORLD_W = 1600;
+export const WORLD_H = 960;
+
 export const GB = 1_000_000_000;
+
+// 単位はビット毎秒。バイトに直すのは使う側（helpers.js の bytesPerSec）。
 export const AUDIO_BPS = 32_000;      // 音声1本の想定ビットレート
 export const SCREEN_BPS = 800_000;    // 画面共有1本の想定ビットレート
 export const SCREEN_OFF_GB = 700;     // これを超えたら画面共有を停止
 export const VOICE_OFF_GB = 900;      // これを超えたら音声も停止
 export const LIMIT_GB = 1000;         // 無料枠（表示用）
-export const NEAR = 64;               // 近接の半径（2マス＝64px）。office と一致させる
+// エリア外で会話できる半径（2マス＝64px）。
+// 同じ値が public/office/panel.js と public/office/voice.js にもある（計3か所）。
+// ここだけ変えると、画面では呼び出しボタンが出るのにチャットが届かない、といったずれ方をする。
+export const NEAR = 64;
 
 // ── Slack 通知（入室・離席・着席・退出） ──
 // 登録を許す Webhook URL の接頭辞。ここを狭めておくことで、

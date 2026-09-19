@@ -1,5 +1,27 @@
-// 部屋（Durable Object）：位置の配信＋SFU中継＋転送量ガード。
+// 部屋（Durable Object）：位置の配信＋チャット中継＋SFU中継＋転送量ガード。
 // 1つのインスタンスに全員が接続する（src/index.js が idFromName("main") で選ぶ）。
+//
+// ── このファイル全体を支配している前提：休眠（WebSocket Hibernation）──
+//
+// handleWs の ctx.acceptWebSocket(server) が、接続を張ったまま部屋を眠らせる仕組み。
+// 眠っているあいだ、利用者の WebSocket はつながったままだが、部屋はメモリから落とされる。
+// 次のメッセージが届くと constructor から作り直される。
+//
+// つまり constructor で用意した this.xxx は、いつ消えてもおかしくない。
+// どこに何が乗っているかは次のとおり。
+//
+//   serializeAttachment（接続ごと・残る）
+//     id / name / token / avatar / away / SFUの各ID
+//     ※ 上限 16,384 バイト。大きいものは storage へ
+//   ctx.storage（部屋ごと・残る）
+//     officeComments / budget ※ どちらも遅延読み込み
+//   this.positions（消える）
+//     全員の座標。位置は止まっていても2秒ごとに届く（public/office/net.js の
+//     sendPos）ので、消えても次の pos で戻る。戻るまでのあいだ {x:0, y:0} 扱いになる
+//   this.callAt（消える）
+//     呼び出しの連打防止。休眠を挟むとクールダウンが実質リセットされる
+//   this.scheduled / this.budget*（消えるが問題ない）
+//     前者は作り直され、後者は ensureBudgetLoaded が storage から読み直す
 
 import { GB, LIMIT_GB, NEAR, CALL_COOLDOWN_MS } from "./config.js";
 import { json, cleanAvatar, cleanComment, monthKey, levelFor, zoneIdAtWorld, bytesPerSec, readWebhookUrl, escapeSlack } from "./helpers.js";
@@ -8,7 +30,8 @@ export class Room {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
-    this.positions = new Map();   // id -> {x,y}
+    // 以下はすべてメモリ上の値。休眠で消えることを前提に扱う（冒頭の説明を参照）。
+    this.positions = new Map();   // id -> {x,y}。消えても次の pos で戻る
     this.scheduled = false;
     this.budgetBytes = 0;
     this.budgetMonth = monthKey();
@@ -69,7 +92,13 @@ export class Room {
     for (const ws of this.ctx.getWebSockets()) { try { ws.send(data); } catch { } }
   }
 
-  // チャット中継：送信者のエリア内 or 近接の人（＋送信者本人）へ送る
+  // チャット中継：送信者のエリア内 or 近接の人（＋送信者本人）へ送る。
+  // 配信範囲の条件は public/office/voice.js の currentTargets と同じにしてある
+  // （声が届く相手とチャットが届く相手を一致させるため）。
+  //
+  // 1通ごとに KV から zones を読み直している。会話エリアは管理者が変えたときしか
+  // 変わらないので毎回読む必要はないが、KV の読み出しは安く、持ち回すと管理者の
+  // 「反映」との整合を取る手間が増えるため、そのままにしてある。
   async relayChat(att, text) {
     let zones = [];
     try { zones = JSON.parse((await this.env.LAYOUT_KV.get("zones")) || "[]"); } catch { }
@@ -108,11 +137,13 @@ export class Room {
     if (!me || !you) return;
     if (Math.hypot(you.x - me.x, you.y - me.y) > NEAR) return;      // 近くにいないと呼べない
 
+    // クールダウンはメモリ上の this.callAt で見ているので、休眠を挟むと実質リセットされる。
+    // 相手が10秒以内にもう一度鳴らされる程度なので、storage までは使っていない。
     const now = Date.now();
     const key = `${att.id}>${toId}`;
     if (now - (this.callAt.get(key) || 0) < CALL_COOLDOWN_MS) return;
     this.callAt.set(key, now);
-    for (const [k, t] of this.callAt) if (now - t > CALL_COOLDOWN_MS) this.callAt.delete(k);
+    for (const [k, t] of this.callAt) if (now - t > CALL_COOLDOWN_MS) this.callAt.delete(k);   // 古い記録を掃除
 
     try { target.ws.send(JSON.stringify({ t: "called", name: att.name, at: now })); } catch { }
     try { ws.send(JSON.stringify({ t: "call_sent", name: target.att.name, at: now })); } catch { }
@@ -125,8 +156,14 @@ export class Room {
     await this.ensureBudgetLoaded();
     const pair = new WebSocketPair();
     const client = pair[0], server = pair[1];
+    // これが休眠を有効にする1行。server.accept() にすると休眠しなくなり、
+    // 代わりに this.positions などがメモリに残り続ける（＝常時課金される）。
     this.ctx.acceptWebSocket(server);
 
+    // 接続ごとの情報。休眠を越えて残る唯一の置き場所。
+    // name が空のあいだは「まだ hello を受け取っていない接続」の意味で、
+    // 配信や退出通知の対象から外す目印にもなっている。
+    // token は SFU 中継の認可に使う。welcome で本人にだけ渡す。
     const att = {
       id: crypto.randomUUID().slice(0, 8),
       name: "",
@@ -138,77 +175,107 @@ export class Room {
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  // 受け取ったメッセージを t の値で振り分ける。中身はそれぞれ下の on〜 にある。
   async webSocketMessage(ws, message) {
     let msg;
-    try { msg = JSON.parse(message); } catch { return; }
+    try { msg = JSON.parse(message); } catch { return; }   // 壊れたデータは黙って捨てる
     const att = ws.deserializeAttachment();
     if (!att) return;
 
-    if (msg.t === "hello") {
-      await this.ensureBudgetLoaded();
-      att.name = String(msg.name || "名無し").slice(0, 20);
-      att.avatar = cleanAvatar(msg.avatar);
-      ws.serializeAttachment(att);
-      ws.send(JSON.stringify({
-        t: "welcome", id: att.id, token: att.token,
-        budget: { level: this.budgetLevel, usedGb: this.usedGb(), limitGb: LIMIT_GB },
-      }));
-      await this.ensureComments();
-      ws.send(JSON.stringify({ t: "comments", list: this.comments }));   // 入室時に現在のコメントを送る
-      this.schedule();
-      await this.notify(`${escapeSlack(att.name)}さんがスペースに入室しました。`);
-    } else if (msg.t === "comment_add") {
-      await this.ensureComments();
-      const c = cleanComment(msg.comment);
-      if (c) {
-        const idx = this.comments.findIndex((x) => x.id === c.id);
-        if (idx >= 0) this.comments[idx] = c;                   // 同idは置き換え（移動・更新）
-        else if (this.comments.length < 200) this.comments.push(c);
-        else return;
-        await this.ctx.storage.put("officeComments", this.comments);
-        this.broadcastComments();
-      }
-    } else if (msg.t === "comment_remove") {
-      await this.ensureComments();
-      const before = this.comments.length;
-      this.comments = this.comments.filter((c) => c.id !== msg.id);
-      if (this.comments.length !== before) {
-        await this.ctx.storage.put("officeComments", this.comments);
-        this.broadcastComments();
-      }
-    } else if (msg.t === "chat") {
-      // 送信者と同じ会話エリア内、またはエリア外なら近接の人だけに配信（保存はしない）
-      const text = String(msg.text || "").slice(0, 500).trim();
-      if (text) await this.relayChat(att, text);
-    } else if (msg.t === "call") {
-      this.relayCall(ws, att, msg.to);
-    } else if (msg.t === "away") {
-      const next = !!msg.away;
-      const changed = next !== !!att.away;   // 同じ状態の送り直しでは通知しない
-      att.away = next;
-      att.awayMsg = att.away ? String(msg.msg || "").slice(0, 100) : "";
-      ws.serializeAttachment(att);
-      this.schedule();   // 離席状態を全員へ配信
-      if (changed && att.name) {
-        await this.notify(`${escapeSlack(att.name)}さんが${next ? "離席" : "着席"}しました。`);
-      }
-    } else if (msg.t === "pos") {
-      this.positions.set(att.id, { x: Number(msg.x) || 0, y: Number(msg.y) || 0 });
-      this.schedule();
-    } else if (msg.t === "publish") {
-      if (typeof msg.sessionId === "string") att.sfuSessionId = msg.sessionId;
-      if (typeof msg.audio === "string") att.audioTrack = msg.audio;
-      if (typeof msg.screen === "string") att.screenTrack = msg.screen;
-      if (typeof msg.screenSessionId === "string") att.screenSessionId = msg.screenSessionId;
-      ws.serializeAttachment(att);
-      this.schedule();
-    } else if (msg.t === "unpublish") {
-      if (msg.kind === "screen") { att.screenTrack = undefined; att.screenSessionId = undefined; }
-      else if (msg.kind === "audio") att.audioTrack = undefined;
-      else { att.audioTrack = undefined; att.screenTrack = undefined; att.screenSessionId = undefined; }
-      ws.serializeAttachment(att);
-      this.schedule();
+    if (msg.t === "hello") await this.onHello(ws, att, msg);
+    else if (msg.t === "comment_add") await this.onCommentAdd(msg);
+    else if (msg.t === "comment_remove") await this.onCommentRemove(msg);
+    else if (msg.t === "chat") await this.onChat(att, msg);
+    else if (msg.t === "call") this.relayCall(ws, att, msg.to);
+    else if (msg.t === "away") await this.onAway(ws, att, msg);
+    else if (msg.t === "pos") this.onPos(att, msg);
+    else if (msg.t === "publish") this.onPublish(ws, att, msg);
+    else if (msg.t === "unpublish") this.onUnpublish(ws, att, msg);
+  }
+
+  // 入室。名前とアバターを受け取り、本人にだけ id とトークンを返す。
+  // 現在の看板も併せて送る（以後は変更のたびに broadcastComments が配る）。
+  async onHello(ws, att, msg) {
+    await this.ensureBudgetLoaded();
+    att.name = String(msg.name || "名無し").slice(0, 20);
+    att.avatar = cleanAvatar(msg.avatar);
+    ws.serializeAttachment(att);
+    ws.send(JSON.stringify({
+      t: "welcome", id: att.id, token: att.token,
+      budget: { level: this.budgetLevel, usedGb: this.usedGb(), limitGb: LIMIT_GB },
+    }));
+    await this.ensureComments();
+    ws.send(JSON.stringify({ t: "comments", list: this.comments }));   // 入室時に現在のコメントを送る
+    this.schedule();
+    await this.notify(`${escapeSlack(att.name)}さんがスペースに入室しました。`);
+  }
+
+  // 看板の追加・更新。同じ id が来たら置き換え（移動やリサイズもこの経路）。
+  async onCommentAdd(msg) {
+    await this.ensureComments();
+    const c = cleanComment(msg.comment);
+    if (!c) return;
+    const idx = this.comments.findIndex((x) => x.id === c.id);
+    if (idx >= 0) this.comments[idx] = c;
+    else if (this.comments.length < 200) this.comments.push(c);
+    else return;   // 200件を超えたら黙って捨てる（送った側にエラーは返らない）
+    await this.ctx.storage.put("officeComments", this.comments);
+    this.broadcastComments();
+  }
+
+  async onCommentRemove(msg) {
+    await this.ensureComments();
+    const before = this.comments.length;
+    this.comments = this.comments.filter((c) => c.id !== msg.id);
+    if (this.comments.length !== before) {
+      await this.ctx.storage.put("officeComments", this.comments);
+      this.broadcastComments();
     }
+  }
+
+  // 送信者と同じ会話エリア内、またはエリア外なら近接の人だけに配信（保存はしない）
+  async onChat(att, msg) {
+    const text = String(msg.text || "").slice(0, 500).trim();
+    if (text) await this.relayChat(att, text);
+  }
+
+  // 離席・着席。同じ状態の送り直し（再接続時など）では Slack へ通知しない。
+  async onAway(ws, att, msg) {
+    const next = !!msg.away;
+    const changed = next !== !!att.away;
+    att.away = next;
+    att.awayMsg = att.away ? String(msg.msg || "").slice(0, 100) : "";
+    ws.serializeAttachment(att);
+    this.schedule();   // 離席状態を全員へ配信
+    if (changed && att.name) {
+      await this.notify(`${escapeSlack(att.name)}さんが${next ? "離席" : "着席"}しました。`);
+    }
+  }
+
+  // 位置。メモリにだけ持つ（休眠で消えるが、次の pos で戻る）。
+  onPos(att, msg) {
+    this.positions.set(att.id, { x: Number(msg.x) || 0, y: Number(msg.y) || 0 });
+    this.schedule();
+  }
+
+  // SFU で何を送っているかの申告。ここで受けた内容を broadcast が全員へ配り、
+  // 受け取った側が購読する相手を決める。
+  onPublish(ws, att, msg) {
+    if (typeof msg.sessionId === "string") att.sfuSessionId = msg.sessionId;
+    if (typeof msg.audio === "string") att.audioTrack = msg.audio;
+    if (typeof msg.screen === "string") att.screenTrack = msg.screen;
+    if (typeof msg.screenSessionId === "string") att.screenSessionId = msg.screenSessionId;
+    ws.serializeAttachment(att);
+    this.schedule();
+  }
+
+  // 送信の取り下げ。kind 指定が無ければ音声も画面も取り下げる。
+  onUnpublish(ws, att, msg) {
+    if (msg.kind === "screen") { att.screenTrack = undefined; att.screenSessionId = undefined; }
+    else if (msg.kind === "audio") att.audioTrack = undefined;
+    else { att.audioTrack = undefined; att.screenTrack = undefined; att.screenSessionId = undefined; }
+    ws.serializeAttachment(att);
+    this.schedule();
   }
 
   async webSocketClose(ws) { await this.drop(ws); }
@@ -223,12 +290,16 @@ export class Room {
     }
   }
 
+  // 配信をまとめる。全員が15回/秒で位置を送ってくるので、届くたびに全員へ配信すると
+  // 人数の二乗で膨らむ。50ms まとめることで、配信は最大20回/秒に収まる。
   schedule() {
     if (this.scheduled) return;
     this.scheduled = true;
     setTimeout(() => { this.scheduled = false; this.broadcast(); }, 50);
   }
 
+  // 全員の状態を全員へ送る。
+  // avatar / away / sfu は値があるときだけ入れて、送信量を削っている。
   broadcast() {
     const users = [];
     for (const ws of this.ctx.getWebSockets()) {
@@ -273,10 +344,16 @@ export class Room {
     this.budgetLevel = levelFor(this.budgetBytes);
     this.budgetLoaded = true;
   }
+  // 転送量を積む周期アラーム。接続が来るたびに呼ぶが、既に予約済みなら何もしない。
   async ensureAlarm() {
     const cur = await this.ctx.storage.getAlarm();
     if (cur === null) await this.ctx.storage.setAlarm(Date.now() + 60_000);
   }
+  // 60秒ごとに、いまの購読の組み合わせから転送量を推定して積む。
+  // 実測ではなく推定（helpers.js の bytesPerSec）。無料枠を超えないための目安。
+  //
+  // 最後に、接続が残っているときだけ次を予約する。誰もいない部屋では
+  // アラームが止まり、実行時間も課金されない。次の接続で ensureAlarm が起こし直す。
   async alarm() {
     await this.ensureBudgetLoaded();
     const sockets = this.ctx.getWebSockets();
@@ -305,6 +382,12 @@ export class Room {
   }
 
   // ── SFU 中継（App Secret は Worker/DO だけが持つ） ──
+  //
+  // クライアントから SFU を直接叩かせず、必ずここを通す。認可は2段階。
+  //   1. x-office-token → findByToken で接続の持ち主を特定する
+  //      （トークンは welcome で本人にだけ渡すので、他人は名乗れない）
+  //   2. att.sessions.includes(sid) → 自分が作ったセッション以外は操作させない
+  // 2 が無いと、トークンさえ持っていれば他人のセッションを閉じられてしまう。
   async handleRtc(req, url) {
     const token = req.headers.get("x-office-token") || "";
     const owner = this.findByToken(token);
@@ -318,6 +401,10 @@ export class Room {
       const body = await res.json().catch(() => null);
       const sid = body && body.sessionId;
       if (res.ok && typeof sid === "string") {
+        // 画面共有を始めるたびに1件増え、止めても減らない。
+        // attachment の上限 16,384 バイトに対して1件約40バイトなので、
+        // 1回の接続で400回近く共有し直さないと問題にならない。
+        // 上限を設けると、先頭（音声用）を誤って追い出したときに通話が壊れるため触っていない。
         att.sessions = att.sessions || [];
         if (!att.sessions.includes(sid)) att.sessions.push(sid);
         if (!att.sfuSessionId) att.sfuSessionId = sid;   // 最初のセッション＝音声・購読用
@@ -359,6 +446,8 @@ export class Room {
     return null;
   }
 
+  // SFU への実際のリクエスト。App Secret を持つのはここだけで、
+  // クライアントには決して渡らない。
   sfu(method, path, body) {
     const url = `https://rtc.live.cloudflare.com/v1/apps/${this.env.REALTIME_APP_ID}${path}`;
     return fetch(url, {
