@@ -1,7 +1,7 @@
 // 状態を持たない純粋関数のまとめ（レスポンス生成・入力検証・転送量推定など）。
 // ここに置く関数は env も this も参照しない。テストしたくなったらここから。
 
-import { GB, AUDIO_BPS, SCREEN_BPS, SCREEN_OFF_GB, VOICE_OFF_GB, NEAR, SLACK_WEBHOOK_PREFIX } from "./config.js";
+import { GB, AUDIO_BPS, SCREEN_BPS, SCREEN_OFF_GB, VOICE_OFF_GB, NEAR, SLACK_WEBHOOK_PREFIX, WORLD_W, WORLD_H } from "./config.js";
 
 // JSON レスポンスを作る
 export function json(body, status = 200) {
@@ -33,10 +33,10 @@ export function cleanComment(c) {
   const hex = (v, d) => (/^#[0-9a-fA-F]{6}$/.test(v) ? v : d);
   return {
     id: (String(c.id || "").slice(0, 16)) || crypto.randomUUID().slice(0, 8),
-    x: Math.max(0, Math.min(1600, num(c.x, 0))),
-    y: Math.max(0, Math.min(960, num(c.y, 0))),
-    w: Math.max(16, Math.min(1600, num(c.w, 128))),
-    h: Math.max(16, Math.min(960, num(c.h, 64))),
+    x: Math.max(0, Math.min(WORLD_W, num(c.x, 0))),
+    y: Math.max(0, Math.min(WORLD_H, num(c.y, 0))),
+    w: Math.max(16, Math.min(WORLD_W, num(c.w, 128))),
+    h: Math.max(16, Math.min(WORLD_H, num(c.h, 64))),
     text: String(c.text || "").slice(0, 300),
     size: Math.max(8, Math.min(48, num(c.size, 16))),
     color: hex(c.color, "#141815"),

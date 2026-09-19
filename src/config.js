@@ -1,5 +1,10 @@
 // サーバー側で共有する定数（転送量ガードの設定など）
 
+// マップの大きさ。public/map.js の COLS*GRID / ROWS*GRID と一致させること。
+// サーバーからは public/ を import できないので、同じ値を二重に持っている。
+export const WORLD_W = 1600;
+export const WORLD_H = 960;
+
 export const GB = 1_000_000_000;
 
 // 単位はビット毎秒。バイトに直すのは使う側（helpers.js の bytesPerSec）。

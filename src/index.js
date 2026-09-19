@@ -25,6 +25,11 @@ async function kvEndpoint(env, key, req) {
   }
   if (req.method === "POST") {
     const body = await req.text();
+    // 形は見ないが、JSON として読めることと大きさだけは確かめる。
+    // 認証の代わりにはならないが、壊れた値が保存されて気づけなくなるのは防げる。
+    // （保存できてしまうと GET がそれを返し、クライアントは握りつぶすので表に出ない）
+    if (body.length > 1_000_000) return json({ error: "データが大きすぎます" }, 413);
+    try { JSON.parse(body); } catch { return json({ error: "JSON として読めませんでした" }, 400); }
     await env.LAYOUT_KV.put(key, body);
     return new Response("ok");
   }
