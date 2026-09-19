@@ -1,12 +1,22 @@
 // 画面の DOM を書き換える側。左メニューバーと、ステージに重ねる表示を扱う。
 //
 // キャンバス（ctx）には一切触れない。描画は scene.js、移動は move.js。
+//
+// 関数は init〜 と update〜 の2種類しかない。
+//   init〜   … 起動時に1回だけ。イベントを登録する
+//   update〜 … main.js のループから繰り返し呼ばれる。今の store を画面へ写す
+// update〜 は何度呼ばれても構わないように書く。毎フレーム呼ばれるものは
+// 「前回と同じなら即 return」のガードを自分で持ち、持たないものは main.js 側で間引く。
+//
+// 参照する要素の id は office.html にある。id を変えると片方だけ壊れる。
 import { GRID, WORLD } from "../map.js";
 import { store, zoneIdAt } from "./store.js";
 import { sendComment, sendChat, sendAway, sendCall } from "./net.js";
 import { stopMoving } from "./move.js";
 
-const NEAR = GRID * 2;      // エリア外で会話できる範囲（voice.js と同じ半径2マス）
+// エリア外にいる人どうしが会話できる範囲。voice.js が音声をつなぐ距離と、
+// サーバーがチャットを配る距離と、同じ値を別々に持っている。変えるときは3か所。
+const NEAR = GRID * 2;
 
 // ── コメント作成モーダル（オフィス側） ──
 let editingComment = null;   // 再編集中の看板（null＝新規作成）
@@ -23,7 +33,9 @@ export function initCommentUI() {
 	fillExpirySelects();
 }
 
-// 期限日時のプルダウン（年/月/日/時/分）を作る（初回のみ）
+// 期限日時のプルダウン（年/月/日/時/分）の選択肢を作る。
+// HTML 側の select は空で、中身はここが作る。
+// 「初回のみ」の判定は y.options.length（既に入っていれば何もしない）。
 function fillExpirySelects() {
 	const y = document.getElementById("c-year");
 	if (!y || y.options.length) return;
@@ -46,6 +58,9 @@ function setExpirySelects(dt) {
 	document.getElementById("c-hour").value = String(dt.getHours());
 	document.getElementById("c-min").value = String(Math.floor(dt.getMinutes() / 15) * 15);   // 15分刻みに合わせる
 }
+// 看板の作成／編集を開く。
+// 引数ありは既存の看板の再編集（scene.js のクリックから）、なしは新規作成。
+// 同じモーダルを使い回し、editingComment がどちらかを覚えている。
 export function openCommentModal(target) {
 	editingComment = target && target.id ? target : null;
 	const src = editingComment || {};
@@ -72,7 +87,8 @@ export function openCommentModal(target) {
 function closeCommentModal() {
 	document.getElementById("comment-modal").classList.remove("open");
 	editingComment = null;
-	if (document.activeElement && document.activeElement.blur) document.activeElement.blur();   // 入力欄からフォーカスを外す
+	// 入力欄にフォーカスが残ったままだと、move.js の isTyping が効いて移動キーが使えない
+	if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
 }
 function saveCommentModal() {
 	const err = document.getElementById("c-err");
@@ -96,6 +112,8 @@ function saveCommentModal() {
 		italic: document.getElementById("c-italic").checked,
 		expireAt,
 	};
+	// 保存はどちらも「サーバーへ送るだけ」。画面には自分で書かず、
+	// サーバーが全員へ配った結果が返ってきて初めて表示に反映される。
 	if (editingComment) {
 		Object.assign(editingComment, fields);   // 既存を更新（id・位置・大きさは維持）
 		sendComment(editingComment);
@@ -108,6 +126,8 @@ function saveCommentModal() {
 	}
 	closeCommentModal();   // サーバーが全員へ配信し、返ってきたリストで表示される
 }
+// crypto.randomUUID は安全でない接続（http のままの自前サーバーなど）では使えないので、
+// 失敗したら乱数で代用する。id は同じ看板を見分けられれば足りる。
 function uid() {
 	try { return crypto.randomUUID().slice(0, 8); } catch { return "c" + Math.floor(Math.random() * 1e9).toString(36); }
 }
@@ -120,12 +140,16 @@ export function initLinkPrompt() {
 	if (btn) btn.addEventListener("click", () => {
 		if (!currentLink) return;
 		let u = currentLink;
+		// 管理者が "example.com" のように書いていても開けるようにする。
+		// ここで補わないと、いまのページからの相対パスとして解釈される。
 		if (!/^https?:\/\//i.test(u)) u = "https://" + u;
-		window.open(u, "_blank", "noopener");
+		window.open(u, "_blank", "noopener");   // noopener で開いた先から元のページを触らせない
 	});
 }
 
-// リンク付き家具のうち、自分から2マス以内で一番近いもののプロンプトを出す
+// リンク付き家具のうち、自分から2マス以内で一番近いもののプロンプトを出す。
+// 距離は家具の矩形までの距離（中心ではない）なので、大きな家具でも端に寄れば届く。
+// ここの2マスは NEAR と同じ値だが、意味が違う（会話できる距離ではない）ので別に書いてある。
 export function updateLinkPrompt() {
 	const el = document.getElementById("link-prompt");
 	if (!el) return;
@@ -206,6 +230,11 @@ export function updateCallAlert() {
 // ── 在室者リスト（左メニュー）──
 // 会話エリアごとに中の人をまとめる。エリア外にいるときは、いま会話できる
 // 「近くの人」（同じくエリア外で半径NEAR以内）を自分視点でまとめて表示する。
+//
+// つまり「いま自分の声が届く相手」の一覧であって、接続者の一覧ではない。
+// 接続者の全員を見るのは勤務者一覧（下）のほう。
+//
+// 呼ぶたびに innerHTML を作り直すので、main.js 側で500msに間引いている。
 export function updateRoster() {
 	const el = document.getElementById("roster");
 	if (!el) return;
@@ -257,6 +286,7 @@ export function initChatUI() {
 }
 
 // ── 勤務者一覧（接続中の全員） ──
+// 距離やエリアに関係なく、いま接続している人を全員並べる。
 export function initPeopleUI() {
 	const btn = document.getElementById("people-btn");
 	const modal = document.getElementById("people-modal");
@@ -310,7 +340,8 @@ export function initAwayUI() {
 		}
 	});
 
-	// 更新は理由を反映するだけ。モーダルは閉じない（着席するまで出したまま）
+	// 「更新」は理由を書き換えるだけで、離席は解除しない。
+	// モーダルも開いたままにする（閉じる導線は「着席」ボタンのほう）。
 	if (saveBtn) saveBtn.addEventListener("click", () => {
 		store.me.awayMsg = text ? text.value.trim() : "";
 		sendAway(true, store.me.awayMsg);
@@ -324,6 +355,7 @@ function setAwayBtn(away) {
 }
 
 // ── 転送量の表示（使用量 / 1000GB） ──
+// 直前に表示した値。同じなら DOM を触らない（毎フレーム呼ばれるため）。
 let lastUsage = -1;
 export function updateUsage() {
 	const el = document.getElementById("usage");
@@ -338,6 +370,9 @@ export function updateUsage() {
 		`<div class="usage-bar"><span style="width:${pct}%;background:${color}"></span></div>`;
 }
 
+// ── チャットの表示 ──
+// store.chatSeq は net.js が1件受け取るたびに増やす通し番号。
+// 中身を比べる代わりにこれを見て、変わったときだけ組み直す。
 let lastChatSeq = -1;
 export function updateChat() {
 	const el = document.getElementById("chat-log");
@@ -354,6 +389,8 @@ export function updateChat() {
 	el.innerHTML = html;
 }
 
+// 在室者リストの1グループ分の HTML。isFree は「会話エリアではなく近くの人」の意味で、
+// 見た目を変えるために CSS のクラスへ渡している。
 function renderGroup(title, members, isFree) {
 	let h = `<div class="rgroup${isFree ? " free" : ""}">`;
 	h += `<div class="rh">${esc(title)}（${members.length}）</div>`;
@@ -367,6 +404,8 @@ function renderGroup(title, members, isFree) {
 	return h + "</div>";
 }
 
+// HTML に差し込む前に記号を実体参照へ変える。
+// このファイルは innerHTML で組み立てるので、名前や本文は必ずこれを通す。
 function esc(s) {
 	return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
