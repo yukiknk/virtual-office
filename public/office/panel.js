@@ -134,6 +134,8 @@ function uid() {
 
 // ── 家具リンク：2マス以内に入ったら「開きますか？」を出す ──
 let currentLink = null;
+// 直前に出していた内容。毎フレーム呼ばれるので、変わらないときは DOM を触らない。
+let linkKey = "";
 
 export function initLinkPrompt() {
 	const btn = document.getElementById("link-open");
@@ -161,6 +163,11 @@ export function updateLinkPrompt() {
 		const d = Math.hypot(store.me.x - nx, store.me.y - ny);
 		if (d <= GRID * 2 && d < bestD) { best = f; bestD = d; }
 	}
+	// 距離の判定は自分が動くたびに要るが、書き込みは表示が変わるときだけでよい
+	const key = best ? `${best.url}|${best.label || ""}` : "";
+	if (key === linkKey) return;
+	linkKey = key;
+
 	if (best) {
 		currentLink = best.url;
 		document.getElementById("link-label").textContent = `「${best.label || best.url}」を開きますか？`;
@@ -394,12 +401,9 @@ export function updateChat() {
 function renderGroup(title, members, isFree) {
 	let h = `<div class="rgroup${isFree ? " free" : ""}">`;
 	h += `<div class="rh">${esc(title)}（${members.length}）</div>`;
-	if (members.length === 0) {
-		h += `<div class="rempty">誰もいません</div>`;
-	} else {
-		for (const p of members) {
-			h += `<div class="rperson${p.self ? " self" : ""}"><span class="dot"></span><span class="nm">${esc(p.name)}</span>${p.self ? '<span class="you">あなた</span>' : ""}</div>`;
-		}
+	// members は必ず自分から始まるので0件にはならない
+	for (const p of members) {
+		h += `<div class="rperson${p.self ? " self" : ""}"><span class="dot"></span><span class="nm">${esc(p.name)}</span>${p.self ? '<span class="you">あなた</span>' : ""}</div>`;
 	}
 	return h + "</div>";
 }
