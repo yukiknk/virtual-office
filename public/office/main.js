@@ -8,7 +8,13 @@ import { SHEETS, store, rebuildBlocked } from "./store.js";
 import { KEY, writeJson } from "../storage.js";
 import { connect, sendPos } from "./net.js";
 import { updateVoice, initVoiceUI } from "./voice.js";
-import { fit, draw, update, initInput, updateRoster, initCommentUI, initLinkPrompt, updateLinkPrompt, initChatUI, updateChat, initAwayUI, updateUsage, initPeopleUI, updatePeople, sweepExpiredComments, updateCallPrompt, updateCallAlert } from "./scene.js";
+import {
+	fit, draw, update, initInput,
+	initCommentUI, initLinkPrompt, initChatUI, initAwayUI, initPeopleUI,
+	updateRoster, updatePeople, updateLinkPrompt, updateChat, updateUsage,
+	updateCallPrompt, updateCallAlert,
+	sweepExpiredComments,
+} from "./scene.js";
 import { initAlarm } from "./alarm.js";
 
 // 画像シートの読み込みを始める。onload を src より先に設定しないと、
@@ -20,23 +26,22 @@ function loadSheets() {
 	}
 }
 
-// 以下4つは初期データの取得。どれも失敗を握りつぶして空配列にする。
-// 一部が取れなくても画面は動かす方針（家具が出なくても歩ける）。
+// 初期データを /api/… から JSON で取る。
+// 失敗は握りつぶして既定値を返す。一部が取れなくても画面は動かす
+// 方針のため（家具が出なくても歩ける）。
 // なお fetch は 404 でも例外を投げないが、本文が JSON でないので .json() 側で
 // 落ちて結局ここへ来る。通信エラーと 404 は同じ扱いになる。
+async function loadJson(path, fallback) {
+	try { return await (await fetch(path)).json(); } catch { return fallback; }
+}
+
 async function loadLayout() {
-	try { store.layout = await (await fetch("/api/layout")).json(); } catch { store.layout = []; }
+	store.layout = await loadJson("/api/layout", []);
 	rebuildBlocked();   // 通行禁止マスを作り直す
 }
-async function loadZones() {
-	try { store.zones = await (await fetch("/api/zones")).json(); } catch { store.zones = []; }
-}
-async function loadComments() {
-	try { store.comments = await (await fetch("/api/comments")).json(); } catch { store.comments = []; }
-}
-async function loadFurniture() {
-	try { store.furniture = await (await fetch("/api/furniture")).json(); } catch { store.furniture = []; }
-}
+async function loadZones() { store.zones = await loadJson("/api/zones", []); }
+async function loadComments() { store.comments = await loadJson("/api/comments", []); }
+async function loadFurniture() { store.furniture = await loadJson("/api/furniture", []); }
 
 // 毎フレーム：移動 → 位置送信 → 音声更新（間引き）→ 在室者更新 → 描画
 //
