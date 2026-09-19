@@ -175,77 +175,107 @@ export class Room {
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  // 受け取ったメッセージを t の値で振り分ける。中身はそれぞれ下の on〜 にある。
   async webSocketMessage(ws, message) {
     let msg;
-    try { msg = JSON.parse(message); } catch { return; }
+    try { msg = JSON.parse(message); } catch { return; }   // 壊れたデータは黙って捨てる
     const att = ws.deserializeAttachment();
     if (!att) return;
 
-    if (msg.t === "hello") {
-      await this.ensureBudgetLoaded();
-      att.name = String(msg.name || "名無し").slice(0, 20);
-      att.avatar = cleanAvatar(msg.avatar);
-      ws.serializeAttachment(att);
-      ws.send(JSON.stringify({
-        t: "welcome", id: att.id, token: att.token,
-        budget: { level: this.budgetLevel, usedGb: this.usedGb(), limitGb: LIMIT_GB },
-      }));
-      await this.ensureComments();
-      ws.send(JSON.stringify({ t: "comments", list: this.comments }));   // 入室時に現在のコメントを送る
-      this.schedule();
-      await this.notify(`${escapeSlack(att.name)}さんがスペースに入室しました。`);
-    } else if (msg.t === "comment_add") {
-      await this.ensureComments();
-      const c = cleanComment(msg.comment);
-      if (c) {
-        const idx = this.comments.findIndex((x) => x.id === c.id);
-        if (idx >= 0) this.comments[idx] = c;                   // 同idは置き換え（移動・更新）
-        else if (this.comments.length < 200) this.comments.push(c);
-        else return;   // 200件を超えたら黙って捨てる（送った側にエラーは返らない）
-        await this.ctx.storage.put("officeComments", this.comments);
-        this.broadcastComments();
-      }
-    } else if (msg.t === "comment_remove") {
-      await this.ensureComments();
-      const before = this.comments.length;
-      this.comments = this.comments.filter((c) => c.id !== msg.id);
-      if (this.comments.length !== before) {
-        await this.ctx.storage.put("officeComments", this.comments);
-        this.broadcastComments();
-      }
-    } else if (msg.t === "chat") {
-      // 送信者と同じ会話エリア内、またはエリア外なら近接の人だけに配信（保存はしない）
-      const text = String(msg.text || "").slice(0, 500).trim();
-      if (text) await this.relayChat(att, text);
-    } else if (msg.t === "call") {
-      this.relayCall(ws, att, msg.to);
-    } else if (msg.t === "away") {
-      const next = !!msg.away;
-      const changed = next !== !!att.away;   // 同じ状態の送り直しでは通知しない
-      att.away = next;
-      att.awayMsg = att.away ? String(msg.msg || "").slice(0, 100) : "";
-      ws.serializeAttachment(att);
-      this.schedule();   // 離席状態を全員へ配信
-      if (changed && att.name) {
-        await this.notify(`${escapeSlack(att.name)}さんが${next ? "離席" : "着席"}しました。`);
-      }
-    } else if (msg.t === "pos") {
-      this.positions.set(att.id, { x: Number(msg.x) || 0, y: Number(msg.y) || 0 });
-      this.schedule();
-    } else if (msg.t === "publish") {
-      if (typeof msg.sessionId === "string") att.sfuSessionId = msg.sessionId;
-      if (typeof msg.audio === "string") att.audioTrack = msg.audio;
-      if (typeof msg.screen === "string") att.screenTrack = msg.screen;
-      if (typeof msg.screenSessionId === "string") att.screenSessionId = msg.screenSessionId;
-      ws.serializeAttachment(att);
-      this.schedule();
-    } else if (msg.t === "unpublish") {
-      if (msg.kind === "screen") { att.screenTrack = undefined; att.screenSessionId = undefined; }
-      else if (msg.kind === "audio") att.audioTrack = undefined;
-      else { att.audioTrack = undefined; att.screenTrack = undefined; att.screenSessionId = undefined; }
-      ws.serializeAttachment(att);
-      this.schedule();
+    if (msg.t === "hello") await this.onHello(ws, att, msg);
+    else if (msg.t === "comment_add") await this.onCommentAdd(msg);
+    else if (msg.t === "comment_remove") await this.onCommentRemove(msg);
+    else if (msg.t === "chat") await this.onChat(att, msg);
+    else if (msg.t === "call") this.relayCall(ws, att, msg.to);
+    else if (msg.t === "away") await this.onAway(ws, att, msg);
+    else if (msg.t === "pos") this.onPos(att, msg);
+    else if (msg.t === "publish") this.onPublish(ws, att, msg);
+    else if (msg.t === "unpublish") this.onUnpublish(ws, att, msg);
+  }
+
+  // 入室。名前とアバターを受け取り、本人にだけ id とトークンを返す。
+  // 現在の看板も併せて送る（以後は変更のたびに broadcastComments が配る）。
+  async onHello(ws, att, msg) {
+    await this.ensureBudgetLoaded();
+    att.name = String(msg.name || "名無し").slice(0, 20);
+    att.avatar = cleanAvatar(msg.avatar);
+    ws.serializeAttachment(att);
+    ws.send(JSON.stringify({
+      t: "welcome", id: att.id, token: att.token,
+      budget: { level: this.budgetLevel, usedGb: this.usedGb(), limitGb: LIMIT_GB },
+    }));
+    await this.ensureComments();
+    ws.send(JSON.stringify({ t: "comments", list: this.comments }));   // 入室時に現在のコメントを送る
+    this.schedule();
+    await this.notify(`${escapeSlack(att.name)}さんがスペースに入室しました。`);
+  }
+
+  // 看板の追加・更新。同じ id が来たら置き換え（移動やリサイズもこの経路）。
+  async onCommentAdd(msg) {
+    await this.ensureComments();
+    const c = cleanComment(msg.comment);
+    if (!c) return;
+    const idx = this.comments.findIndex((x) => x.id === c.id);
+    if (idx >= 0) this.comments[idx] = c;
+    else if (this.comments.length < 200) this.comments.push(c);
+    else return;   // 200件を超えたら黙って捨てる（送った側にエラーは返らない）
+    await this.ctx.storage.put("officeComments", this.comments);
+    this.broadcastComments();
+  }
+
+  async onCommentRemove(msg) {
+    await this.ensureComments();
+    const before = this.comments.length;
+    this.comments = this.comments.filter((c) => c.id !== msg.id);
+    if (this.comments.length !== before) {
+      await this.ctx.storage.put("officeComments", this.comments);
+      this.broadcastComments();
     }
+  }
+
+  // 送信者と同じ会話エリア内、またはエリア外なら近接の人だけに配信（保存はしない）
+  async onChat(att, msg) {
+    const text = String(msg.text || "").slice(0, 500).trim();
+    if (text) await this.relayChat(att, text);
+  }
+
+  // 離席・着席。同じ状態の送り直し（再接続時など）では Slack へ通知しない。
+  async onAway(ws, att, msg) {
+    const next = !!msg.away;
+    const changed = next !== !!att.away;
+    att.away = next;
+    att.awayMsg = att.away ? String(msg.msg || "").slice(0, 100) : "";
+    ws.serializeAttachment(att);
+    this.schedule();   // 離席状態を全員へ配信
+    if (changed && att.name) {
+      await this.notify(`${escapeSlack(att.name)}さんが${next ? "離席" : "着席"}しました。`);
+    }
+  }
+
+  // 位置。メモリにだけ持つ（休眠で消えるが、次の pos で戻る）。
+  onPos(att, msg) {
+    this.positions.set(att.id, { x: Number(msg.x) || 0, y: Number(msg.y) || 0 });
+    this.schedule();
+  }
+
+  // SFU で何を送っているかの申告。ここで受けた内容を broadcast が全員へ配り、
+  // 受け取った側が購読する相手を決める。
+  onPublish(ws, att, msg) {
+    if (typeof msg.sessionId === "string") att.sfuSessionId = msg.sessionId;
+    if (typeof msg.audio === "string") att.audioTrack = msg.audio;
+    if (typeof msg.screen === "string") att.screenTrack = msg.screen;
+    if (typeof msg.screenSessionId === "string") att.screenSessionId = msg.screenSessionId;
+    ws.serializeAttachment(att);
+    this.schedule();
+  }
+
+  // 送信の取り下げ。kind 指定が無ければ音声も画面も取り下げる。
+  onUnpublish(ws, att, msg) {
+    if (msg.kind === "screen") { att.screenTrack = undefined; att.screenSessionId = undefined; }
+    else if (msg.kind === "audio") att.audioTrack = undefined;
+    else { att.audioTrack = undefined; att.screenTrack = undefined; att.screenSessionId = undefined; }
+    ws.serializeAttachment(att);
+    this.schedule();
   }
 
   async webSocketClose(ws) { await this.drop(ws); }
