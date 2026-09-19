@@ -1,18 +1,25 @@
-// 描画（マップ・タイル・エリア・アバター）とキーボード移動。
+// キャンバスへの描画と、マウスによる看板の操作。
+//
+// このファイルが唯一 ctx を持つ。左メニューなどの DOM は panel.js、
+// キーボードによる移動は move.js。
+//
+// 重ね順は draw() の6行がすべて。レイヤーを足すときはそこへ挿す。
 import { GRID, WORLD, w2s, s2w, setViewport, drawBase, drawCommentBox } from "../map.js";
-import { store, SHEETS, zoneIdAt, DEFAULT_AVATAR } from "./store.js";
-import { sendComment, removeComment, sendChat, sendAway, sendCall } from "./net.js";
+import { store, SHEETS, DEFAULT_AVATAR } from "./store.js";
+import { sendComment, removeComment } from "./net.js";
 import { layerImg, drawAvatar } from "../avatar.js";
+import { faceDir, isBlocked } from "./move.js";
+import { openCommentModal } from "./panel.js";
 
 const stage = document.getElementById("stage");
 const canvas = document.getElementById("plan");
 const ctx = canvas.getContext("2d");
 
-const SPEED = 260;          // 移動速度（論理px/秒）
 const LERP_DELAY = 120;     // 他人は120ms過去を補間して滑らかに描く
-const NEAR = GRID * 2;      // エリア外で会話できる範囲（voice.js と同じ半径2マス）
-const heldKeys = new Set();
-let hover = null;           // カーソルの論理座標（会話エリアのホバー・コメント削除用）
+
+// ポインタのイベントが書き、描画が読む状態。
+// hover は drawZones と drawComments が、drag* は drawComments が見る。
+let hover = null;           // カーソルのワールド座標。キャンバスの外へ出ると null
 let dragComment = null;     // 操作中のオフィス看板
 let dragMode = null;        // "move" | "resize"
 let dragCorner = null;      // リサイズ中の角（nw/ne/sw/se）
@@ -21,18 +28,16 @@ let dragOrig = null;        // リサイズ時：元の {x,y,w,h}
 let dragStart = null;       // つかんだ論理座標（クリック判定用）
 let dragMoved = false;      // しきい値を超えて動かしたか
 
-// ── 入力・移動 ──
-export function initInput() {
-	window.addEventListener("keydown", (e) => {
-		if (isTyping(e.target)) return;   // 入力欄では移動キー（wasd等）を奪わない
-		const k = e.key.toLowerCase();
-		if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) {
-			heldKeys.add(k);
-			e.preventDefault();
-		}
-	});
-	window.addEventListener("keyup", (e) => heldKeys.delete(e.key.toLowerCase()));
-	window.addEventListener("blur", () => heldKeys.clear());
+// ── マウス操作 ──
+// キーボードによる移動は move.js にある。
+//
+// 看板の操作は3つのイベントにまたがる状態機械になっている。
+//   pointerdown … つかむ（どの看板か・移動かリサイズか・つかんだ位置を控える）
+//   pointermove … 4px を超えて動かしたら dragMoved を立ててから反映する
+//   pointerup   … dragMoved が false なら「クリック」＝再編集、true なら全員へ共有
+// この 4px のしきい値が無いと、再編集しようとしたクリックが
+// 「1px 動かした」と見なされて共有に化ける。
+export function initPointer() {
 	window.addEventListener("resize", fit);
 
 	// カーソル位置の記録＋看板の移動／リサイズ
@@ -50,7 +55,8 @@ export function initInput() {
 	});
 	canvas.addEventListener("pointerleave", () => { hover = null; });
 
-	// オフィス作成の看板：×で削除、四隅ドラッグで拡大縮小、内部ドラッグで移動、クリックで再編集
+	// オフィス作成の看板：×で削除、四隅ドラッグで拡大縮小、内部ドラッグで移動、クリックで再編集。
+	// 後ろから探すのは、重なっているとき手前の看板を先に拾うため（描画は前から＝後ろほど手前）。
 	canvas.addEventListener("pointerdown", (e) => {
 		const rect = canvas.getBoundingClientRect();
 		const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
@@ -65,7 +71,7 @@ export function initInput() {
 			dragComment = c; dragStart = p; dragMoved = false;
 			if (corner) { dragMode = "resize"; dragCorner = corner; dragOrig = { x: c.x, y: c.y, w: c.w, h: c.h }; }
 			else { dragMode = "move"; dragOff = { x: p.x - c.x, y: p.y - c.y }; }
-			canvas.setPointerCapture(e.pointerId);
+			canvas.setPointerCapture(e.pointerId);   // キャンバスの外へドラッグしても pointermove を受け続ける
 			return;
 		}
 	});
@@ -89,236 +95,6 @@ export function initInput() {
 		store.me.y = y;
 	});
 }
-// テキスト入力欄などにフォーカスがあるか
-function isTyping(t) {
-	return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
-}
-
-// ── コメント作成モーダル（オフィス側） ──
-let editingComment = null;   // 再編集中の看板（null＝新規作成）
-
-export function initCommentUI() {
-	const addBtn = document.getElementById("comment-add-btn");
-	const cancel = document.getElementById("c-cancel");
-	const save = document.getElementById("c-save");
-	const modal = document.getElementById("comment-modal");
-	if (addBtn) addBtn.addEventListener("click", () => openCommentModal());
-	if (cancel) cancel.addEventListener("click", closeCommentModal);
-	if (save) save.addEventListener("click", saveCommentModal);
-	if (modal) modal.addEventListener("click", (e) => { if (e.target.id === "comment-modal") closeCommentModal(); });
-	fillExpirySelects();
-}
-
-// 期限日時のプルダウン（年/月/日/時/分）を作る（初回のみ）
-function fillExpirySelects() {
-	const y = document.getElementById("c-year");
-	if (!y || y.options.length) return;
-	const mo = document.getElementById("c-month");
-	const d = document.getElementById("c-day");
-	const h = document.getElementById("c-hour");
-	const mi = document.getElementById("c-min");
-	const opt = (sel, val, label) => { const o = document.createElement("option"); o.value = String(val); o.textContent = label; sel.appendChild(o); };
-	const yr = new Date().getFullYear();
-	for (let i = 0; i <= 2; i++) opt(y, yr + i, String(yr + i));
-	for (let m = 1; m <= 12; m++) opt(mo, m, String(m));
-	for (let dd = 1; dd <= 31; dd++) opt(d, dd, String(dd));
-	for (let hh = 0; hh <= 23; hh++) opt(h, hh, String(hh).padStart(2, "0"));
-	for (let mm = 0; mm < 60; mm += 15) opt(mi, mm, String(mm).padStart(2, "0"));   // 15分刻み
-}
-function setExpirySelects(dt) {
-	document.getElementById("c-year").value = String(dt.getFullYear());
-	document.getElementById("c-month").value = String(dt.getMonth() + 1);
-	document.getElementById("c-day").value = String(dt.getDate());
-	document.getElementById("c-hour").value = String(dt.getHours());
-	document.getElementById("c-min").value = String(Math.floor(dt.getMinutes() / 15) * 15);   // 15分刻みに合わせる
-}
-function openCommentModal(target) {
-	editingComment = target && target.id ? target : null;
-	const src = editingComment || {};
-	heldKeys.clear();   // モーダル中はアバターを動かさない
-	const title = document.getElementById("c-title");
-	if (title) title.textContent = editingComment ? "看板の編集" : "看板の作成";
-	const save = document.getElementById("c-save");
-	if (save) save.textContent = editingComment ? "保存" : "作成";
-	document.getElementById("c-text").value = src.text || "";
-	document.getElementById("c-size").value = String(src.size || 16);
-	document.getElementById("c-color").value = src.color || "#141815";
-	document.getElementById("c-bg").value = src.bg || "#ffffff";
-	document.getElementById("c-bold").checked = !!src.bold;
-	document.getElementById("c-italic").checked = !!src.italic;
-	// 期限日時：既存はその値、新規は「今から1時間後」を初期値に
-	const base = src.expireAt ? new Date(src.expireAt) : new Date(Date.now() + 60 * 60 * 1000);
-	base.setSeconds(0, 0);
-	setExpirySelects(base);
-	const err = document.getElementById("c-err");
-	if (err) err.textContent = "";
-	document.getElementById("comment-modal").classList.add("open");
-	document.getElementById("c-text").focus();
-}
-function closeCommentModal() {
-	document.getElementById("comment-modal").classList.remove("open");
-	editingComment = null;
-	if (document.activeElement && document.activeElement.blur) document.activeElement.blur();   // 入力欄からフォーカスを外す
-}
-function saveCommentModal() {
-	const err = document.getElementById("c-err");
-	const setErr = (m) => { if (err) err.textContent = m || ""; };
-	// 期限日時は未来のみ許可。存在しない日付（例：2月30日）は弾く。
-	const y = +document.getElementById("c-year").value;
-	const mo = +document.getElementById("c-month").value;
-	const d = +document.getElementById("c-day").value;
-	const h = +document.getElementById("c-hour").value;
-	const mi = +document.getElementById("c-min").value;
-	const dt = new Date(y, mo - 1, d, h, mi, 0, 0);
-	if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) { setErr("その日付は存在しません。"); return; }
-	const expireAt = dt.getTime();
-	if (expireAt <= Date.now()) { setErr("未来の日時を指定してください。"); return; }
-	const fields = {
-		text: document.getElementById("c-text").value.trim(),
-		size: Number(document.getElementById("c-size").value) || 16,
-		color: document.getElementById("c-color").value,
-		bg: document.getElementById("c-bg").value,
-		bold: document.getElementById("c-bold").checked,
-		italic: document.getElementById("c-italic").checked,
-		expireAt,
-	};
-	if (editingComment) {
-		Object.assign(editingComment, fields);   // 既存を更新（id・位置・大きさは維持）
-		sendComment(editingComment);
-	} else {
-		const w = GRID * 6, h = GRID * 3;
-		// 自分の少し上に置く（画面外にはみ出さないよう収める）
-		const x = Math.max(0, Math.min(WORLD.w - w, store.me.x - w / 2));
-		const y = Math.max(0, Math.min(WORLD.h - h, store.me.y - h - GRID));
-		sendComment({ id: uid(), x: Math.round(x), y: Math.round(y), w, h, ...fields });
-	}
-	closeCommentModal();   // サーバーが全員へ配信し、返ってきたリストで表示される
-}
-function uid() {
-	try { return crypto.randomUUID().slice(0, 8); } catch { return "c" + Math.floor(Math.random() * 1e9).toString(36); }
-}
-
-// ── 家具リンク：2マス以内に入ったら「開きますか？」を出す ──
-let currentLink = null;
-
-export function initLinkPrompt() {
-	const btn = document.getElementById("link-open");
-	if (btn) btn.addEventListener("click", () => {
-		if (!currentLink) return;
-		let u = currentLink;
-		if (!/^https?:\/\//i.test(u)) u = "https://" + u;
-		window.open(u, "_blank", "noopener");
-	});
-}
-
-// リンク付き家具のうち、自分から2マス以内で一番近いもののプロンプトを出す
-export function updateLinkPrompt() {
-	const el = document.getElementById("link-prompt");
-	if (!el) return;
-	let best = null, bestD = Infinity;
-	for (const f of store.furniture) {
-		if (!f.url) continue;
-		const nx = Math.max(f.x, Math.min(store.me.x, f.x + f.sw));   // 家具矩形上の最近点
-		const ny = Math.max(f.y, Math.min(store.me.y, f.y + f.sh));
-		const d = Math.hypot(store.me.x - nx, store.me.y - ny);
-		if (d <= GRID * 2 && d < bestD) { best = f; bestD = d; }
-	}
-	if (best) {
-		currentLink = best.url;
-		document.getElementById("link-label").textContent = `「${best.label || best.url}」を開きますか？`;
-		el.hidden = false;
-	} else {
-		currentLink = null;
-		el.hidden = true;
-	}
-}
-
-// ── 呼び出し：近くにいる人にボタンを出す ──
-// 条件は「半径NEAR以内」かつ「離席中でない」。同じ条件をサーバーでも検査している。
-// 表示中のボタンを作り直すと押せなくなるので、顔ぶれが変わったときだけ組み直す。
-let callPromptKey = "";
-
-function nearbyCallTargets() {
-	const list = [];
-	for (const [id, o] of store.others) {
-		if (!o.name || o.away) continue;
-		const p = o.buf[o.buf.length - 1];
-		if (!p) continue;
-		const d = Math.hypot(p.x - store.me.x, p.y - store.me.y);
-		if (d <= NEAR) list.push({ id, name: o.name, d });
-	}
-	return list.sort((a, b) => a.d - b.d).slice(0, 3);   // 多すぎても押せないので近い順に3人まで
-}
-
-export function updateCallPrompt() {
-	const el = document.getElementById("call-prompt");
-	if (!el) return;
-	if (store.me.away) { el.hidden = true; callPromptKey = ""; return; }   // 離席中は呼び出さない
-
-	const targets = nearbyCallTargets();
-	const key = targets.map((t) => `${t.id}:${t.name}`).join("|");
-	if (key === callPromptKey) return;
-	callPromptKey = key;
-
-	if (!targets.length) { el.hidden = true; el.replaceChildren(); return; }
-
-	el.replaceChildren(...targets.map((t) => {
-		const btn = document.createElement("button");
-		btn.type = "button";
-		btn.className = "call-btn";
-		btn.textContent = `${t.name}さんを呼び出す`;
-		btn.addEventListener("click", () => {
-			sendCall(t.id);
-			btn.disabled = true;                                  // 連打防止（サーバー側でも弾く）
-			setTimeout(() => { btn.disabled = false; }, 10_000);
-		});
-		return btn;
-	}));
-	el.hidden = false;
-}
-
-// 呼び出しを受けたときの画面バナー。数秒で自然に消す。
-export function updateCallAlert() {
-	const el = document.getElementById("call-alert");
-	if (!el) return;
-	const a = store.callAlert;
-	if (!a) { if (!el.hidden) el.hidden = true; return; }
-	if (Date.now() - a.at > 8000) { store.callAlert = null; el.hidden = true; return; }
-	const text = `🔔 ${a.name}さんから呼び出しがあります`;
-	if (el.textContent !== text) el.textContent = text;
-	el.hidden = false;
-}
-
-export function update(dt) {
-	if (store.me.away) { heldKeys.clear(); store.me.moving = false; return; }   // 離席中は移動できない
-	let dx = 0, dy = 0;
-	if (heldKeys.has("w") || heldKeys.has("arrowup")) dy -= 1;
-	if (heldKeys.has("s") || heldKeys.has("arrowdown")) dy += 1;
-	if (heldKeys.has("a") || heldKeys.has("arrowleft")) dx -= 1;
-	if (heldKeys.has("d") || heldKeys.has("arrowright")) dx += 1;
-	if (!dx && !dy) { store.me.moving = false; return; }
-	store.me.moving = true;
-	store.me.dir = faceDir(dx, dy);
-	const len = Math.hypot(dx, dy);   // 斜めでも速さを一定に
-	// 軸ごとに判定して、壁沿いに滑れるようにする
-	const nx = Math.max(0, Math.min(WORLD.w, store.me.x + (dx / len) * SPEED * dt));
-	if (!isBlocked(nx, store.me.y)) store.me.x = nx;
-	const ny = Math.max(0, Math.min(WORLD.h, store.me.y + (dy / len) * SPEED * dt));
-	if (!isBlocked(store.me.x, ny)) store.me.y = ny;
-}
-
-// 移動量から向き（up/left/down/right）を決める
-function faceDir(dx, dy) {
-	if (Math.abs(dx) >= Math.abs(dy) && dx !== 0) return dx > 0 ? "right" : "left";
-	return dy > 0 ? "down" : "up";
-}
-
-// その論理座標のマスが通行禁止か
-function isBlocked(x, y) {
-	const col = Math.floor(x / GRID), row = Math.floor(y / GRID);
-	return store.blocked.has(`${col},${row}`);
-}
-
 // ── 描画 ──
 export function fit() {
 	// 高解像度ディスプレイでもボケないよう、実ピクセル数で描く
@@ -355,7 +131,9 @@ function drawComments() {
 }
 function pointInRect(p, c) { return p.x >= c.x && p.x < c.x + c.w && p.y >= c.y && p.y < c.y + c.h; }
 
-// 消える日時を過ぎた看板か
+// 消える日時を過ぎた看板か。
+// 描画・pointerdown・dblclick・sweep の4か所で使う。期限切れの看板は
+// 「見えない・触れない・避けない」を全部満たす必要があるため。
 function isExpired(c) { return !!(c && c.expireAt && c.expireAt <= Date.now()); }
 
 // 期限切れの看板を削除依頼（サーバーが全員へ反映）。多重送信を防ぐ。
@@ -444,7 +222,7 @@ function drawWallsAndActors() {
 		actors.push({ x: p.x, y: p.y, name: o.name, color: "#b23a2a", away: o.away, awayMsg: o.awayMsg, dir: o.dir || "down", moving, avatar: o.avatar || DEFAULT_AVATAR });
 	}
 	actors.push({ x: store.me.x, y: store.me.y, name: store.me.name, color: "#1f3fb0", away: store.me.away, awayMsg: store.me.awayMsg, dir: store.me.dir, moving: store.me.moving, avatar: store.me.avatar });
-	actors.sort((a, b) => a.y - b.y);
+	actors.sort((a, b) => a.y - b.y);   // 南（下）にいる人ほど後に描く＝手前になる
 
 	// 3) アバターを描いた直後、そのアバターより上に来るべき壁だけを描き直す
 	for (const a of actors) {
@@ -462,11 +240,25 @@ function coverWalls(wx, wy, wallCells) {
 	const onWall = wallCells.has(`${ac},${ar}`);
 	for (const item of store.layout) {
 		if ((item.layer || "floor") !== "object") continue;
-		if (Math.abs(item.col - ac) > 4) continue;        // 名前の幅ぶんだけ見る（軽量化）
+		// 見る範囲を絞って軽くしている。数字はアバターの見た目の大きさから決めたもので、
+		// ±4列は名前ラベルの幅、-3〜+2行はアバター（56px≒2マス）＋名前ラベルの高さ。
+		// 狭めすぎると、壁の裏に隠れるべき頭やラベルがはみ出して見える。
+		if (Math.abs(item.col - ac) > 4) continue;
 		if (item.row < ar - 3 || item.row > ar + 2) continue;
 		const cover = onWall ? true : item.row > ar;      // 床なら南（下）側の壁だけ上
 		if (cover) drawTile(item);
 	}
+}
+
+// ワールド座標の矩形を、実ピクセル格子に吸着させた画面座標の矩形にする。
+// ドット絵は4辺が半端な位置に来ると継ぎ目やにじみが出るので、整数に揃える。
+// タイル・家具・アバターの3か所が同じ吸着を必要とするのでここにまとめてある。
+function snapRect(wx, wy, ww, wh) {
+	const dpr = window.devicePixelRatio || 1;
+	const snap = (v) => Math.round(v * dpr) / dpr;
+	const a = w2s(wx, wy), b = w2s(wx + ww, wy + wh);
+	const x0 = snap(a.x), y0 = snap(a.y);
+	return { x: x0, y: y0, w: snap(b.x) - x0, h: snap(b.y) - y0 };
 }
 
 function drawLayer(layerKey) {
@@ -481,26 +273,18 @@ function drawTile(item) {
 	const sheet = SHEETS[item.cat || "floor"];
 	if (!sheet || !sheet.ready) return;
 	ctx.imageSmoothingEnabled = false;
-	const dpr = window.devicePixelRatio || 1;
-	const snap = (v) => Math.round(v * dpr) / dpr;   // 実ピクセル格子に合わせて継ぎ目をなくす
-	const a = w2s(item.col * GRID, item.row * GRID);
-	const b = w2s((item.col + 1) * GRID, (item.row + 1) * GRID);
-	const x0 = snap(a.x), y0 = snap(a.y);
-	const x1 = snap(b.x), y1 = snap(b.y);
-	ctx.drawImage(sheet.img, item.tileCol * 32, item.tileRow * 32, 32, 32, x0, y0, x1 - x0, y1 - y0);
+	const r = snapRect(item.col * GRID, item.row * GRID, GRID, GRID);
+	ctx.drawImage(sheet.img, item.tileCol * 32, item.tileRow * 32, 32, 32, r.x, r.y, r.w, r.h);
 }
 
 // 家具（壁の一つ上）：配列順（後ろほど手前）に、シートの選択範囲を等倍で描く
 function drawFurniture() {
 	ctx.imageSmoothingEnabled = false;
-	const dpr = window.devicePixelRatio || 1;
-	const snap = (v) => Math.round(v * dpr) / dpr;
 	for (const f of store.furniture) {
 		const sheet = SHEETS[f.cat];
 		if (!sheet || !sheet.ready) continue;
-		const a = w2s(f.x, f.y), b = w2s(f.x + f.sw, f.y + f.sh);
-		const x0 = snap(a.x), y0 = snap(a.y), x1 = snap(b.x), y1 = snap(b.y);
-		ctx.drawImage(sheet.img, f.sx, f.sy, f.sw, f.sh, x0, y0, x1 - x0, y1 - y0);
+		const r = snapRect(f.x, f.y, f.sw, f.sh);
+		ctx.drawImage(sheet.img, f.sx, f.sy, f.sw, f.sh, r.x, r.y, r.w, r.h);
 	}
 }
 
@@ -511,18 +295,19 @@ function drawZones() {
 		const z = store.zones[i];
 		if (hover.x < z.x || hover.x >= z.x + z.w || hover.y < z.y || hover.y >= z.y + z.h) continue;
 		const a = w2s(z.x, z.y), b = w2s(z.x + z.w, z.y + z.h);
+		ctx.save();
 		ctx.fillStyle = "rgba(31,63,176,0.05)";
 		ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
 		ctx.strokeStyle = "rgba(31,63,176,0.35)";
 		ctx.lineWidth = 1.5;
 		ctx.setLineDash([6, 4]);
 		ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
-		ctx.setLineDash([]);
 		ctx.fillStyle = "rgba(31,63,176,0.6)";
 		ctx.font = "700 13px system-ui, 'Noto Sans JP', sans-serif";
 		ctx.textAlign = "left";
 		ctx.textBaseline = "top";
-		ctx.fillText(z.name, a.x + 4, a.y + 4);
+		ctx.fillText(z.name, a.x + 4, a.y + 4);   // 破線は塗りには効かないので、消さずにそのまま文字を描ける
+		ctx.restore();
 		break;   // 一番上のエリアだけ
 	}
 }
@@ -539,16 +324,13 @@ function drawActor(wx, wy, name, color, opt = {}) {
 
 	if (bodyImg && bodyImg.ready) {
 		// 0コマ目は静止ポーズ。歩いているあいだだけ 1〜8 コマを繰り返す。
+		// Date.now() を基準にしているので、全員のアニメーションが自然に揃う。
 		const frame = opt.moving ? 1 + (Math.floor(Date.now() / 120) % 8) : 0;
-		// ドット絵がにじまないよう、描画先をデバイス画素の格子に合わせる
-		const dpr = window.devicePixelRatio || 1;
-		const snap = (v) => Math.round(v * dpr) / dpr;
 		const wl = wx - DRAW_W / 2, wt = wy - DRAW_H + 6;   // 足元を(wx,wy)付近に、上へ立たせる
-		const a = w2s(wl, wt), b = w2s(wl + DRAW_W, wt + DRAW_H);
-		const x0 = snap(a.x), y0 = snap(a.y), x1 = snap(b.x), y1 = snap(b.y);
+		const r = snapRect(wl, wt, DRAW_W, DRAW_H);
 		ctx.save();
 		if (opt.away) ctx.globalAlpha = 0.4;   // 離席中は薄く描く
-		drawAvatar(ctx, cfg, { dir: opt.dir || "down", frame, dx: x0, dy: y0, dw: x1 - x0, dh: y1 - y0 });
+		drawAvatar(ctx, cfg, { dir: opt.dir || "down", frame, dx: r.x, dy: r.y, dw: r.w, dh: r.h });
 		ctx.restore();
 		drawNamePill(wx, wt, name, color, opt.away);        // 名前は頭上に
 	} else {
@@ -584,20 +366,20 @@ function drawNamePill(wx, wtop, name, color, away) {
 	ctx.lineWidth = 1.5; ctx.strokeStyle = color; ctx.stroke();
 	ctx.fillStyle = "#141815";
 	ctx.fillText(name, cx, cy + 0.5);
-	ctx.restore();
-	ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+	ctx.restore();   // font・文字の揃え・globalAlpha はここで呼び出し元の値に戻る
 }
 
 // 離席バッジ＋理由をアバターの下に表示
 function drawAwayLabel(sx, sy, msg) {
+	ctx.save();
 	ctx.font = "600 11px 'M PLUS Rounded 1c', system-ui, 'Noto Sans JP', sans-serif";
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
+	// 長い理由は末尾を削って「…」に収める（幅186pxまで）
 	let text = "離席中" + (msg ? "：" + msg : "");
 	while (text.length > 4 && ctx.measureText(text).width > 186) text = text.slice(0, -2) + "…";
 	const w = ctx.measureText(text).width + 14;
 	const h = 18, cx = sx, cy = sy + 22;
-	ctx.save();
 	ctx.shadowColor = "rgba(0,0,0,0.25)";
 	ctx.shadowBlur = 4;
 	ctx.shadowOffsetY = 1;
@@ -605,182 +387,18 @@ function drawAwayLabel(sx, sy, msg) {
 	ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2);
 	ctx.fillStyle = "#4a5046";
 	ctx.fill();
-	ctx.restore();
+	// 文字に枠と同じ影が付かないよう、描く前に影を消す
+	ctx.shadowColor = "transparent";
+	ctx.shadowBlur = 0;
+	ctx.shadowOffsetY = 0;
 	ctx.fillStyle = "#fff";
 	ctx.fillText(text, cx, cy + 0.5);
-	ctx.textAlign = "left";
-	ctx.textBaseline = "alphabetic";
+	ctx.restore();
 }
 
-// ── 在室者リスト（左メニュー）──
-// 会話エリアごとに中の人をまとめる。エリア外にいるときは、いま会話できる
-// 「近くの人」（同じくエリア外で半径NEAR以内）を自分視点でまとめて表示する。
-export function updateRoster() {
-	const el = document.getElementById("roster");
-	if (!el) return;
-
-	const myZone = zoneIdAt(store.me.x, store.me.y);
-
-	// 他人を最新位置つきで集める
-	const others = [];
-	for (const o of store.others.values()) {
-		const p = o.buf[o.buf.length - 1];
-		if (!p) continue;
-		others.push({ name: o.name, x: p.x, y: p.y });
-	}
-
-	// 自分が今いるグループだけを表示する
-	const members = [{ name: store.me.name, self: true }];
-	let title;
-	if (myZone) {
-		const z = store.zones.find((z) => z.id === myZone);
-		title = z ? z.name : "会話エリア";
-		for (const p of others) if (zoneIdAt(p.x, p.y) === myZone) members.push({ name: p.name, self: false });
-		el.innerHTML = renderGroup(title, members, false);
-	} else {
-		title = "近くの人";
-		for (const p of others) {
-			if (zoneIdAt(p.x, p.y) !== null) continue;   // エリア内の人は対象外
-			if (Math.hypot(p.x - store.me.x, p.y - store.me.y) <= NEAR) members.push({ name: p.name, self: false });
-		}
-		el.innerHTML = renderGroup(title, members, true);
-	}
-}
-
-// ── チャット（左メニュー） ──
-export function initChatUI() {
-	const form = document.getElementById("chat-form");
-	if (!form) return;
-	const input = document.getElementById("chat-input");
-	const submit = () => {
-		const text = input.value.trim();
-		if (!text) return;
-		sendChat(text);
-		input.value = "";
-	};
-	form.addEventListener("submit", (e) => { e.preventDefault(); submit(); });
-	// Enterで送信、Shift+Enterで改行
-	if (input) input.addEventListener("keydown", (e) => {
-		if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
-	});
-}
-
-// ── 勤務者一覧（接続中の全員） ──
-export function initPeopleUI() {
-	const btn = document.getElementById("people-btn");
-	const modal = document.getElementById("people-modal");
-	const close = document.getElementById("people-close");
-	if (btn) btn.addEventListener("click", () => { renderPeople(); if (modal) modal.classList.add("open"); });
-	if (close) close.addEventListener("click", () => { if (modal) modal.classList.remove("open"); });
-	if (modal) modal.addEventListener("click", (e) => { if (e.target.id === "people-modal") modal.classList.remove("open"); });
-}
-// 一覧を開いている間だけ、最新の接続者に更新する
-export function updatePeople() {
-	const modal = document.getElementById("people-modal");
-	if (modal && modal.classList.contains("open")) renderPeople();
-}
-function renderPeople() {
-	const el = document.getElementById("people-list");
-	if (!el) return;
-	const people = [{ name: store.me.name, self: true, away: store.me.away }];
-	for (const o of store.others.values()) people.push({ name: o.name, self: false, away: o.away });
-	let html = `<div class="people-count">${people.length}人が接続中</div>`;
-	for (const p of people) {
-		html += `<div class="person-row${p.self ? " self" : ""}"><span class="dot"></span><span class="nm">${esc(p.name)}</span>${p.self ? "（自分）" : ""}${p.away ? '<span class="away-tag">離席中</span>' : ""}</div>`;
-	}
-	el.innerHTML = html;
-}
-
-// ── 退出・離席 ──
-export function initAwayUI() {
-	const awayBtn = document.getElementById("away-btn");
-	const leaveBtn = document.getElementById("leave-btn");
-	const modal = document.getElementById("away-modal");
-	const saveBtn = document.getElementById("away-save");
-	const text = document.getElementById("away-text");
-
-	if (leaveBtn) leaveBtn.addEventListener("click", () => { window.location.href = "index.html"; });
-
-	if (awayBtn) awayBtn.addEventListener("click", () => {
-		if (!store.me.away) {
-			store.me.away = true;
-			setAwayBtn(true);
-			sendAway(true, store.me.awayMsg || "");
-			if (text) text.value = store.me.awayMsg || "";
-			if (modal) modal.classList.add("open");
-			if (text) text.focus();
-		} else {
-			// 着席：離席解除し、モーダルも閉じる
-			store.me.away = false;
-			store.me.awayMsg = "";
-			setAwayBtn(false);
-			sendAway(false, "");
-			if (modal) modal.classList.remove("open");
-		}
-	});
-
-	// 更新は理由を反映するだけ。モーダルは閉じない（着席するまで出したまま）
-	if (saveBtn) saveBtn.addEventListener("click", () => {
-		store.me.awayMsg = text ? text.value.trim() : "";
-		sendAway(true, store.me.awayMsg);
-	});
-}
-function setAwayBtn(away) {
-	const b = document.getElementById("away-btn");
-	if (!b) return;
-	b.textContent = away ? "着席" : "離席";
-	b.classList.toggle("on", away);
-}
-
-// ── 転送量の表示（使用量 / 1000GB） ──
-let lastUsage = -1;
-export function updateUsage() {
-	const el = document.getElementById("usage");
-	if (!el) return;
-	const used = store.usedGb || 0, limit = store.limitGb || 1000;
-	if (used === lastUsage) return;
-	lastUsage = used;
-	const pct = Math.min(100, (used / limit) * 100);
-	const color = pct >= 90 ? "#b23a2a" : pct >= 70 ? "#e0a83f" : "#2a7d3f";
-	el.innerHTML =
-		`<div class="usage-label">推定通信量 ${used} / ${limit} GB</div>` +
-		`<div class="usage-bar"><span style="width:${pct}%;background:${color}"></span></div>`;
-}
-
-let lastChatSeq = -1;
-export function updateChat() {
-	const el = document.getElementById("chat-log");
-	if (!el || store.chatSeq === lastChatSeq) return;   // 変化がなければ何もしない
-	lastChatSeq = store.chatSeq;
-	let html = "";
-	for (const m of store.messages) {   // 新着が先頭＝上から新しい順
-		if (m.kind === "call") {        // 呼び出しの記録は発言者名を出さず、見た目を分ける
-			html += `<div class="chat-msg call">${esc(m.text)}</div>`;
-			continue;
-		}
-		html += `<div class="chat-msg${m.self ? " self" : ""}"><span class="chat-name">${esc(m.name)}</span>${esc(m.text)}</div>`;
-	}
-	el.innerHTML = html;
-}
-
-function renderGroup(title, members, isFree) {
-	let h = `<div class="rgroup${isFree ? " free" : ""}">`;
-	h += `<div class="rh">${esc(title)}（${members.length}）</div>`;
-	if (members.length === 0) {
-		h += `<div class="rempty">誰もいません</div>`;
-	} else {
-		for (const p of members) {
-			h += `<div class="rperson${p.self ? " self" : ""}"><span class="dot"></span><span class="nm">${esc(p.name)}</span>${p.self ? '<span class="you">あなた</span>' : ""}</div>`;
-		}
-	}
-	return h + "</div>";
-}
-
-function esc(s) {
-	return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-}
-
-// 履歴バッファから renderTime 時点の位置を線形補間で求める
+// 履歴バッファから renderTime 時点の位置を線形補間で求める。
+// LERP_DELAY だけ過去を描くことで、次の位置が届くまでの猶予を作っている。
+// 猶予を過ぎても次が来ていなければ、最後の位置で止める（行き過ぎて戻るより自然）。
 function renderPos(buf, renderTime) {
 	if (!buf || buf.length === 0) return null;
 	if (buf.length === 1) return { x: buf[0].x, y: buf[0].y };
