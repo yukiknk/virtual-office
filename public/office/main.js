@@ -4,7 +4,8 @@
 //   起動     … 初期データの取得、接続、UI のイベント登録（ファイル末尾）
 //   ループ   … requestAnimationFrame で毎フレーム。移動・送信・描画
 //   タイマー … 1秒ごと。タブが裏に回ってループが止まっている間を埋める
-import { SHEETS, store, rebuildBlocked } from "./store.js";
+import { SHEETS, store } from "./store.js";
+import { loadAll } from "./api.js";
 import { KEY, writeJson } from "../storage.js";
 import { connect, sendPos } from "./net.js";
 import { updateVoice, initVoiceUI } from "./voice.js";
@@ -25,23 +26,6 @@ function loadSheets() {
 		SHEETS[k].img.src = SHEETS[k].src;
 	}
 }
-
-// 初期データを /api/… から JSON で取る。
-// 失敗は握りつぶして既定値を返す。一部が取れなくても画面は動かす
-// 方針のため（家具が出なくても歩ける）。
-// なお fetch は 404 でも例外を投げないが、本文が JSON でないので .json() 側で
-// 落ちて結局ここへ来る。通信エラーと 404 は同じ扱いになる。
-async function loadJson(path, fallback) {
-	try { return await (await fetch(path)).json(); } catch { return fallback; }
-}
-
-async function loadLayout() {
-	store.layout = await loadJson("/api/layout", []);
-	rebuildBlocked();   // 通行禁止マスを作り直す
-}
-async function loadZones() { store.zones = await loadJson("/api/zones", []); }
-async function loadComments() { store.comments = await loadJson("/api/comments", []); }
-async function loadFurniture() { store.furniture = await loadJson("/api/furniture", []); }
 
 // 毎フレーム：移動 → 位置送信 → 音声更新（間引き）→ 在室者更新 → 描画
 //
@@ -98,10 +82,7 @@ window.addEventListener("pagehide", savePos);
 
 // 初期データ。await しないのは、データが揃う前に画面を出すため。届いたものから反映される。
 loadSheets();
-loadLayout();
-loadZones();
-loadComments();
-loadFurniture();
+loadAll();
 
 // サーバーへ接続（WebSocket）
 connect();

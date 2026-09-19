@@ -4,7 +4,8 @@
 //   送信 … 自分の位置・チャット・離席・呼び出し・看板の追加と削除
 //
 // 使うのは main.js（connect / sendPos）と scene.js（各 send*）の2つだけ。
-import { store, rebuildBlocked } from "./store.js";
+import { store } from "./store.js";
+import { loadAll } from "./api.js";
 import { applyBudget, teardownSfu } from "./voice.js";
 import { playAlarm, showCallNotification } from "./alarm.js";
 
@@ -80,12 +81,8 @@ function onMessage(ev) {
 		store.limitGb = msg.limitGb ?? store.limitGb;
 		applyBudget();
 	} else if (msg.t === "reload") {
-		// 管理者が反映：レイアウト・エリア・コメントを取り直す（音声・接続はそのまま）。
-		// 失敗しても何もしない＝前の内容が残るので、反映に失敗しても画面は白くならない。
-		fetch("/api/layout").then((r) => r.json()).then((d) => { store.layout = d; rebuildBlocked(); }).catch(() => { });
-		fetch("/api/zones").then((r) => r.json()).then((d) => { store.zones = d; }).catch(() => { });
-		fetch("/api/comments").then((r) => r.json()).then((d) => { store.comments = d; }).catch(() => { });
-		fetch("/api/furniture").then((r) => r.json()).then((d) => { store.furniture = d; }).catch(() => { });
+		// 管理者が反映：マップの内容を取り直す（音声・接続はそのまま）
+		loadAll();
 	}
 }
 
