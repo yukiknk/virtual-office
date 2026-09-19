@@ -18,7 +18,6 @@ const NEAR = GRID * 2;
 // ── マイク ──
 let localStream = null;       // 自分のマイク
 let micOn = false;            // 送話ON/OFF
-let voiceReady = true;        // 入室時に会話モードへ自動参加（ミュートで publish）
 let micFailed = false;        // マイクが使えないとき true（再試行を止める）
 // ── SFU（マイク送信＋受信） ──
 let sfuPc = null;             // SFU用の RTCPeerConnection
@@ -39,7 +38,7 @@ let selfTile = null;          // 自分の共有プレビュー（自分の画�
 // voiceBusy が多重実行ガード。await を挟むので、前回が終わる前に次が入ると
 // SFU とのやりとりが交錯する。main.js が重複呼び出しを気にしなくていいのはこれのおかげ。
 export async function updateVoice() {
-	if (!voiceReady || voiceBusy || micFailed) return;
+	if (voiceBusy || micFailed) return;
 	if (!store.myId || !store.ws || store.ws.readyState !== WebSocket.OPEN) return;  // 接続待ち
 	voiceBusy = true;
 	try {
@@ -140,23 +139,29 @@ function onTrack(ev) {
 	const mid = ev.transceiver && ev.transceiver.mid;
 	for (const sub of sfuSubs.values()) {
 		if (sub.mid !== mid) continue;
-		const stream = ev.streams[0] || new MediaStream([ev.track]);
-		if (sub.kind === "screen") {
-			if (!sub.videoEl) sub.videoEl = addScreenTile();   // 共有ごとに小さいタイルを用意
-			sub.videoEl.srcObject = stream;
-			sub.videoEl.play?.().catch(() => { });
-		} else {
-			if (!sub.audioEl) {
-				sub.audioEl = document.createElement("audio");
-				sub.audioEl.autoplay = true;
-				document.body.appendChild(sub.audioEl);
-				if (store.speakerId && sub.audioEl.setSinkId) sub.audioEl.setSinkId(store.speakerId).catch(() => { });
-			}
-			sub.audioEl.srcObject = stream;
-			sub.audioEl.play?.().catch(() => { });
-		}
+		attachStream(sub, ev.streams[0] || new MediaStream([ev.track]));
 		return;
 	}
+}
+
+// sub に stream を結びつけて再生する。画面は小さいタイルへ、音声は audio 要素へ。
+// 要素は最初の1回だけ作り、以後は srcObject の差し替えで使い回す。
+function attachStream(sub, stream) {
+	if (sub.kind === "screen") {
+		if (!sub.videoEl) sub.videoEl = addScreenTile();   // 共有ごとに小さいタイルを用意
+		sub.videoEl.srcObject = stream;
+		sub.videoEl.play?.().catch(() => { });
+		return;
+	}
+	if (!sub.audioEl) {
+		sub.audioEl = document.createElement("audio");
+		sub.audioEl.autoplay = true;
+		document.body.appendChild(sub.audioEl);
+		// 入室画面で選んだスピーカーへ出す（対応していないブラウザでは無視される）
+		if (store.speakerId && sub.audioEl.setSinkId) sub.audioEl.setSinkId(store.speakerId).catch(() => { });
+	}
+	sub.audioEl.srcObject = stream;
+	sub.audioEl.play?.().catch(() => { });
 }
 
 // 相手のトラックを購読／解除（対象と現状の差分）
@@ -167,7 +172,7 @@ async function updateSubscriptions(targetIds) {
 		const o = store.others.get(id);
 		if (!o || !o.sfu) continue;
 		if (o.sfu.audio) want.set(`${o.sfu.sessionId}/${o.sfu.audio}`, { sessionId: o.sfu.sessionId, trackName: o.sfu.audio, kind: "audio" });
-			if (allowScreen && o.sfu.screen) {
+		if (allowScreen && o.sfu.screen) {
 			const ssid = o.sfu.screenSessionId || o.sfu.sessionId;   // 画面は別セッション
 			want.set(`${ssid}/${o.sfu.screen}`, { sessionId: ssid, trackName: o.sfu.screen, kind: "screen" });
 		}
@@ -188,27 +193,13 @@ async function subscribe(key, t) {
 	attachSub(sub);   // mid から受信トラックを取り出して確実に表示/再生（複数共有でも取りこぼさない）
 }
 
-// mid に対応する受信トラックを、画面はタイルへ・音声はaudio要素へ結びつける
+// mid に対応する受信トラックを取り出して結びつける（購読した時点で既に届いている分）
 function attachSub(sub) {
 	if (!sfuPc || sub.mid == null) return;
 	const tr = sfuPc.getTransceivers().find((x) => x.mid === sub.mid);
 	const track = tr && tr.receiver && tr.receiver.track;
 	if (!track) return;
-	const stream = new MediaStream([track]);
-	if (sub.kind === "screen") {
-		if (!sub.videoEl) sub.videoEl = addScreenTile();
-		sub.videoEl.srcObject = stream;
-		sub.videoEl.play?.().catch(() => { });
-	} else {
-		if (!sub.audioEl) {
-			sub.audioEl = document.createElement("audio");
-			sub.audioEl.autoplay = true;
-			document.body.appendChild(sub.audioEl);
-			if (store.speakerId && sub.audioEl.setSinkId) sub.audioEl.setSinkId(store.speakerId).catch(() => { });
-		}
-		sub.audioEl.srcObject = stream;
-		sub.audioEl.play?.().catch(() => { });
-	}
+	attachStream(sub, new MediaStream([track]));
 }
 
 async function unsubscribe(key) {
@@ -261,7 +252,8 @@ export async function teardownSfu() {
 // ── 画面共有（エリア内外どこでも・SFU） ──
 async function startScreen() {
 	if (store.me.away) { alert("離席中は画面共有できません"); return; }
-	if (!voiceReady) { alert("先に「音声ON」を押してください"); return; }
+	// 画面共有の publish は音声のセッションIDを一緒に送るので、それが無いと成立しない
+	if (!sfuSessionId) { alert("音声の準備中です。少し待ってから再度お試しください。"); return; }
 	if (store.budgetLevel !== "ok") { alert("転送量の上限に近づいているため、画面共有は停止中です"); return; }
 	if (!store.myId) return;
 	// 画面選択のダイアログはユーザー操作の直後にしか出せないので、
@@ -315,13 +307,12 @@ function setScreenBtn(active) {
 }
 
 // ツールバーのボタン状態を更新。office.html の .ic（アイコン）と .lb（ラベル）に対応。
-function setToolBtn(id, { on, icon, label, disabled } = {}) {
+function setToolBtn(id, { on, icon, label } = {}) {
 	const b = document.getElementById(id);
 	if (!b) return;
 	if (icon !== undefined) b.querySelector(".ic").textContent = icon;
 	if (label !== undefined) b.querySelector(".lb").textContent = label;
 	if (on !== undefined) b.classList.toggle("on", on);
-	if (disabled !== undefined) b.disabled = disabled;
 }
 // 受信した画面共有ごとの小さいタイルを作る（クリックで拡大）
 function addScreenTile() {
