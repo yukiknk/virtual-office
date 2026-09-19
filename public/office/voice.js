@@ -1,25 +1,43 @@
-// 音声と画面共有（すべてSFU）。エリア内は同エリア全員、エリア外は近接の人と会話。
-// 転送量ガードのレベルに応じて画面共有→音声の順に停止する。
+// 音声と画面共有。相手と直接つながるのではなく、すべて SFU（Cloudflare Realtime）を経由する。
+//
+// 会話できる相手は位置で決まる。エリア内にいれば同じエリアの全員、
+// エリア外なら半径 NEAR 以内の人。判定は currentTargets が一手に引き受ける。
+//
+// RTCPeerConnection を2本持っているのがこのファイルの肝。
+//   sfuPc    … 自分のマイクを送り、相手の音声と画面を受け取る
+//   screenPc … 自分の画面を送るためだけの専用
+// 1本にまとめると、送信と受信の SDP のやりとりが重なったときに衝突する。
+//
+// 転送量が増えると、まず画面共有、次に音声の順に止まる（applyBudget）。
 import { store, zoneIdAt } from "./store.js";
 import { GRID } from "../map.js";
 
-const NEAR = GRID * 2;        // エリア外での会話範囲（半径2マス）
+// エリア外での会話範囲。panel.js と src/config.js にも同じ値がある（変えるときは3か所）。
+const NEAR = GRID * 2;
 
+// ── マイク ──
 let localStream = null;       // 自分のマイク
 let micOn = false;            // 送話ON/OFF
 let voiceReady = true;        // 入室時に会話モードへ自動参加（ミュートで publish）
 let micFailed = false;        // マイクが使えないとき true（再試行を止める）
+// ── SFU（マイク送信＋受信） ──
 let sfuPc = null;             // SFU用の RTCPeerConnection
 let sfuSessionId = null;
-let sfuPublished = false;
-const sfuSubs = new Map();    // "sessionId/trackName" -> { mid, kind, audioEl }
+let sfuPublished = false;     // マイクを送り始めたか（publish は一度だけ）
+const sfuSubs = new Map();    // "sessionId/trackName" -> { mid, kind, audioEl, videoEl }
 let voiceBusy = false;        // updateVoice の多重実行を防ぐ
+
+// ── 画面共有（送信専用） ──
 let screenStream = null;      // 自分の画面共有
 let screenPc = null;          // 画面送信専用の RTCPeerConnection（購読用と分離）
 let screenSessionId = null;   // 画面送信専用の SFU セッション
 let selfTile = null;          // 自分の共有プレビュー（自分の画面にも小さく表示）
 
-// ── メイン更新（毎フレーム間引いて呼ばれる） ──
+// ── メイン更新 ──
+// main.js から400msごとに呼ばれ、「今つながっているべき相手」と実際の購読の差を埋める。
+//
+// voiceBusy が多重実行ガード。await を挟むので、前回が終わる前に次が入ると
+// SFU とのやりとりが交錯する。main.js が重複呼び出しを気にしなくていいのはこれのおかげ。
 export async function updateVoice() {
 	if (!voiceReady || voiceBusy || micFailed) return;
 	if (!store.myId || !store.ws || store.ws.readyState !== WebSocket.OPEN) return;  // 接続待ち
@@ -30,7 +48,8 @@ export async function updateVoice() {
 		await updateSubscriptions(currentTargets());
 	} catch (e) {
 		console.warn("[voice]", e);
-		if (e && e.name === "NotAllowedError") {   // マイク拒否
+		// マイクを拒否されたら二度と試さない。放っておくと400msごとに許可を求め続ける。
+		if (e && e.name === "NotAllowedError") {
 			micFailed = true;
 			setToolBtn("mic-btn", { on: false, icon: "🚫", label: "マイク不可" });
 		}
@@ -39,7 +58,9 @@ export async function updateVoice() {
 	}
 }
 
-// いま会話すべき相手（エリア内=同エリア / エリア外=近接）
+// いま会話すべき相手（エリア内=同エリア / エリア外=近接）。
+// この条件は src/room.js がチャットを配る条件と同じ式。声とチャットが同じ範囲に
+// 届くようにするためだが、コードは別々に書かれているので片方だけ変えないこと。
 function currentTargets() {
 	const myZone = zoneIdAt(store.me.x, store.me.y);
 	const ids = new Set();
@@ -58,13 +79,15 @@ function currentTargets() {
 }
 
 // ── SFU 通信 ──
+// SFU の API を叩く共通処理。x-office-token が無いと、他人になりすまして
+// SFU のセッションを操作できてしまうので必ず付ける。
 async function rtcFetch(path, method, body) {
 	const res = await fetch(path, {
 		method,
 		headers: { "Content-Type": "application/json", "x-office-token": store.myToken },
 		body: body === undefined ? undefined : JSON.stringify(body),
 	});
-	const text = await res.text();
+	const text = await res.text();   // エラーでも本文を読み切って接続を解放する
 	let data = null;
 	try { data = text ? JSON.parse(text) : null; } catch { }
 	if (!res.ok) throw new Error(`rtc ${method} ${path} -> ${res.status}`);
@@ -77,7 +100,9 @@ async function ensureMic() {
 	localStream = await navigator.mediaDevices.getUserMedia({
 		audio: micId ? { deviceId: { exact: micId } } : true,
 	});
-	for (const t of localStream.getAudioTracks()) t.enabled = micOn;   // 起動時はミュート
+	// 入室した時点で SFU へ送り始めるが、トラックは無効のままにしておく。
+	// ミュートの切り替えが enabled の変更だけで済み、そのたびに SFU と再ネゴしなくてよくなる。
+	for (const t of localStream.getAudioTracks()) t.enabled = micOn;
 	return localStream;
 }
 
@@ -105,7 +130,12 @@ async function ensureSfuAndPublish() {
 	store.ws.send(JSON.stringify({ t: "publish", sessionId: sfuSessionId, audio: `mic-${store.myId}` }));
 }
 
-// 受信トラックの再生（音声＝audio要素／画面＝オーバーレイ）
+// 受信トラックの再生（音声＝audio要素／画面＝オーバーレイ）。
+//
+// 再生の経路は2本ある。
+//   subscribe の直後   … attachSub（購読した時点で既に届いているトラック）
+//   後から届いたとき   … この ontrack
+// 片方だけでは、同時に複数の共有が始まったときに取りこぼす。
 function onTrack(ev) {
 	const mid = ev.transceiver && ev.transceiver.mid;
 	for (const sub of sfuSubs.values()) {
@@ -153,6 +183,7 @@ async function subscribe(key, t) {
 	const mid = resp.tracks && resp.tracks[0] && resp.tracks[0].mid;
 	const sub = { mid, kind: t.kind, audioEl: null, videoEl: null };
 	sfuSubs.set(key, sub);
+	// SFU が「今すぐ再ネゴせよ」と言ってきたら応じる（新しい受信口が増えたとき）
 	if (resp.requiresImmediateRenegotiation) await renegotiate(resp.sessionDescription);
 	attachSub(sub);   // mid から受信トラックを取り出して確実に表示/再生（複数共有でも取りこぼさない）
 }
@@ -206,7 +237,9 @@ async function renegotiate(remoteDesc) {
 	});
 }
 
-// 接続断・音声停止時にSFUを畳む
+// 接続断・離席・転送量上限でSFUを畳む。
+// localStream（マイク）はあえて止めない。止めると再開のたびに
+// ブラウザの許可ダイアログが出て、離席のたびに煩わしくなる。
 export async function teardownSfu() {
 	if (!sfuPc && !sfuPublished) return;
 	if (selfTile) { selfTile.remove(); selfTile = null; }
@@ -231,7 +264,8 @@ async function startScreen() {
 	if (!voiceReady) { alert("先に「音声ON」を押してください"); return; }
 	if (store.budgetLevel !== "ok") { alert("転送量の上限に近づいているため、画面共有は停止中です"); return; }
 	if (!store.myId) return;
-	// 画面選択はユーザー操作直後に呼ぶ
+	// 画面選択のダイアログはユーザー操作の直後にしか出せないので、
+	// await を挟む前に呼ぶ（先に SFU を用意すると出せなくなる）
 	let stream;
 	try { stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 10 }, audio: false }); } catch { return; }
 	try {
@@ -280,7 +314,7 @@ function setScreenBtn(active) {
 	setToolBtn("screen-btn", { on: active, icon: "🖥️", label: active ? "共有中" : "画面共有" });
 }
 
-// ツールバーのボタン状態を更新（アイコン・ラベル・ON色・無効化）
+// ツールバーのボタン状態を更新。office.html の .ic（アイコン）と .lb（ラベル）に対応。
 function setToolBtn(id, { on, icon, label, disabled } = {}) {
 	const b = document.getElementById(id);
 	if (!b) return;
@@ -320,7 +354,9 @@ function closeBigIfShowing(stream) {
 	if (big && big.querySelector("video").srcObject === stream) closeBig();
 }
 
-// ── 転送量ガードの反映（バナー表示・画面共有停止） ──
+// ── 転送量ガードの反映 ──
+// レベルは2段階。screen_off で画面共有だけ止め、voice_off で音声も止める。
+// 判断はサーバー側が行い、ここは受け取った結果を画面に反映するだけ。
 export function applyBudget() {
 	const b = document.getElementById("screen-btn");
 	if (b) b.disabled = store.budgetLevel !== "ok";
@@ -355,7 +391,8 @@ export function initVoiceUI() {
 		});
 	}
 
-	// 自動再生がブロックされている場合に備え、最初の操作で受信音声を鳴らし始める
+	// ブラウザは操作前の自動再生を止めるので、最初の操作で受信音声を鳴らし始める。
+	// alarm.js の initAlarm も同じ理由で同じことをしている。
 	const resume = () => document.querySelectorAll("audio").forEach((a) => a.play?.().catch(() => { }));
 	window.addEventListener("pointerdown", resume, { once: true });
 	window.addEventListener("keydown", resume, { once: true });
