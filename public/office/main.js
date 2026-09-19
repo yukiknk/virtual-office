@@ -10,13 +10,12 @@ import { KEY, writeJson } from "../storage.js";
 import { connect, sendPos } from "./net.js";
 import { updateVoice, initVoiceUI } from "./voice.js";
 import { initMove, update } from "./move.js";
+import { fit, draw, initPointer, sweepExpiredComments } from "./scene.js";
 import {
-	fit, draw, initPointer,
 	initCommentUI, initLinkPrompt, initChatUI, initAwayUI, initPeopleUI,
 	updateRoster, updatePeople, updateLinkPrompt, updateChat, updateUsage,
 	updateCallPrompt, updateCallAlert,
-	sweepExpiredComments,
-} from "./scene.js";
+} from "./panel.js";
 import { initAlarm } from "./alarm.js";
 
 // 画像シートの読み込みを始める。onload を src より先に設定しないと、
