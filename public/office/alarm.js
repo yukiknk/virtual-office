@@ -32,8 +32,14 @@ const MELODY = [
 	{ at: 1.14, hz: 1046.50, dur: 0.9, attack: 0.030, peak: 0.14 },
 	{ at: 1.52, hz: 783.99, dur: 1.5, attack: 0.035, peak: 0.15 },
 ];
-const MELODY_SPAN = 1.85;   // メロディ本体の長さ（余韻は含めない）
-const REPEAT_GAP = 0.8;     // 1回目と2回目のあいだ
+// メロディ本体の長さ（最後の音の余韻は含めない）。
+// MELODY の音数や間隔を変えたら、ここも合わせて見直すこと。式にしていないのは、
+// 「本体の長さ」が最後の音の dur とは別物で、自動計算にすると意図が読めなくなるため。
+const MELODY_SPAN = 1.85;
+
+// 1回目と2回目のあいだ。1回目の最後の音は 3.02 秒まで鳴り、2回目は 2.65 秒から
+// 始まるので約0.4秒ぶん重なる。余韻が残ったまま次が始まり、自然につながる。
+const REPEAT_GAP = 0.8;
 const REPEAT = 2;           // 1回目を聞き逃しても2回目で気づけるように
 
 // 全体の音量。試聴ページの既定（60%）と同じ大きさに揃えている。
@@ -41,6 +47,10 @@ const VOLUME = 0.6;
 
 // 1音を鳴らす。立ち上がりに傾斜をつけて出だしの角を取り、
 // 減衰は指数的にして自然に消えるようにする。
+//
+// gain が二段になっているのは役割が違うため。
+//   master          … 音量の時間変化（立ち上がりと減衰）を1音まとめて受け持つ
+//   add の中の gain … 基音に対する各倍音の混ぜ具合（時間では変えない）
 function tone(ac, n, startAt) {
 	const t0 = startAt + n.at;
 	const peak = n.peak * VOLUME;
@@ -64,6 +74,11 @@ function tone(ac, n, startAt) {
 	for (const [mult, g] of BELL) add(n.hz * mult, g);
 }
 
+// 呼び鈴を2回鳴らす。
+//
+// 一度も操作されていないタブでは AudioContext が停止中で、resume() は非同期なので
+// この場で鳴らし始められない。initAlarm が最初のクリック／キー入力で先に起こしている
+// のが前提になっている。
 export function playAlarm() {
 	const ac = ctx();
 	if (!ac) return;
