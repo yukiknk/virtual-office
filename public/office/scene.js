@@ -3,15 +3,14 @@ import { GRID, WORLD, w2s, s2w, setViewport, drawBase, drawCommentBox } from "..
 import { store, SHEETS, zoneIdAt, DEFAULT_AVATAR } from "./store.js";
 import { sendComment, removeComment, sendChat, sendAway, sendCall } from "./net.js";
 import { layerImg, drawAvatar } from "../avatar.js";
+import { stopMoving, faceDir, isBlocked } from "./move.js";
 
 const stage = document.getElementById("stage");
 const canvas = document.getElementById("plan");
 const ctx = canvas.getContext("2d");
 
-const SPEED = 260;          // 移動速度（論理px/秒）
 const LERP_DELAY = 120;     // 他人は120ms過去を補間して滑らかに描く
 const NEAR = GRID * 2;      // エリア外で会話できる範囲（voice.js と同じ半径2マス）
-const heldKeys = new Set();
 let hover = null;           // カーソルの論理座標（会話エリアのホバー・コメント削除用）
 let dragComment = null;     // 操作中のオフィス看板
 let dragMode = null;        // "move" | "resize"
@@ -21,18 +20,9 @@ let dragOrig = null;        // リサイズ時：元の {x,y,w,h}
 let dragStart = null;       // つかんだ論理座標（クリック判定用）
 let dragMoved = false;      // しきい値を超えて動かしたか
 
-// ── 入力・移動 ──
-export function initInput() {
-	window.addEventListener("keydown", (e) => {
-		if (isTyping(e.target)) return;   // 入力欄では移動キー（wasd等）を奪わない
-		const k = e.key.toLowerCase();
-		if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) {
-			heldKeys.add(k);
-			e.preventDefault();
-		}
-	});
-	window.addEventListener("keyup", (e) => heldKeys.delete(e.key.toLowerCase()));
-	window.addEventListener("blur", () => heldKeys.clear());
+// ── マウス操作 ──
+// キーボードによる移動は move.js にある。
+export function initPointer() {
 	window.addEventListener("resize", fit);
 
 	// カーソル位置の記録＋看板の移動／リサイズ
@@ -89,11 +79,6 @@ export function initInput() {
 		store.me.y = y;
 	});
 }
-// テキスト入力欄などにフォーカスがあるか
-function isTyping(t) {
-	return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
-}
-
 // ── コメント作成モーダル（オフィス側） ──
 let editingComment = null;   // 再編集中の看板（null＝新規作成）
 
@@ -135,7 +120,7 @@ function setExpirySelects(dt) {
 function openCommentModal(target) {
 	editingComment = target && target.id ? target : null;
 	const src = editingComment || {};
-	heldKeys.clear();   // モーダル中はアバターを動かさない
+	stopMoving();   // モーダル中はアバターを動かさない
 	const title = document.getElementById("c-title");
 	if (title) title.textContent = editingComment ? "看板の編集" : "看板の作成";
 	const save = document.getElementById("c-save");
@@ -287,36 +272,6 @@ export function updateCallAlert() {
 	const text = `🔔 ${a.name}さんから呼び出しがあります`;
 	if (el.textContent !== text) el.textContent = text;
 	el.hidden = false;
-}
-
-export function update(dt) {
-	if (store.me.away) { heldKeys.clear(); store.me.moving = false; return; }   // 離席中は移動できない
-	let dx = 0, dy = 0;
-	if (heldKeys.has("w") || heldKeys.has("arrowup")) dy -= 1;
-	if (heldKeys.has("s") || heldKeys.has("arrowdown")) dy += 1;
-	if (heldKeys.has("a") || heldKeys.has("arrowleft")) dx -= 1;
-	if (heldKeys.has("d") || heldKeys.has("arrowright")) dx += 1;
-	if (!dx && !dy) { store.me.moving = false; return; }
-	store.me.moving = true;
-	store.me.dir = faceDir(dx, dy);
-	const len = Math.hypot(dx, dy);   // 斜めでも速さを一定に
-	// 軸ごとに判定して、壁沿いに滑れるようにする
-	const nx = Math.max(0, Math.min(WORLD.w, store.me.x + (dx / len) * SPEED * dt));
-	if (!isBlocked(nx, store.me.y)) store.me.x = nx;
-	const ny = Math.max(0, Math.min(WORLD.h, store.me.y + (dy / len) * SPEED * dt));
-	if (!isBlocked(store.me.x, ny)) store.me.y = ny;
-}
-
-// 移動量から向き（up/left/down/right）を決める
-function faceDir(dx, dy) {
-	if (Math.abs(dx) >= Math.abs(dy) && dx !== 0) return dx > 0 ? "right" : "left";
-	return dy > 0 ? "down" : "up";
-}
-
-// その論理座標のマスが通行禁止か
-function isBlocked(x, y) {
-	const col = Math.floor(x / GRID), row = Math.floor(y / GRID);
-	return store.blocked.has(`${col},${row}`);
 }
 
 // ── 描画 ──

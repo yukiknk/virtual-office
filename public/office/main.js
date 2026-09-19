@@ -9,8 +9,9 @@ import { loadAll } from "./api.js";
 import { KEY, writeJson } from "../storage.js";
 import { connect, sendPos } from "./net.js";
 import { updateVoice, initVoiceUI } from "./voice.js";
+import { initMove, update } from "./move.js";
 import {
-	fit, draw, update, initInput,
+	fit, draw, initPointer,
 	initCommentUI, initLinkPrompt, initChatUI, initAwayUI, initPeopleUI,
 	updateRoster, updatePeople, updateLinkPrompt, updateChat, updateUsage,
 	updateCallPrompt, updateCallAlert,
@@ -88,7 +89,8 @@ loadAll();
 connect();
 
 // UI のイベント登録
-initInput();
+initMove();
+initPointer();
 initVoiceUI();
 initCommentUI();
 initLinkPrompt();
