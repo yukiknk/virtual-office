@@ -2,6 +2,11 @@
 // - WebSocket / SFU中継 / 反映通知 → 部屋（Durable Object）へ委譲
 // - レイアウト等の保存・取得 → KV
 // 部屋の本体は room.js、共有の定数は config.js、純粋関数は helpers.js にある。
+//
+// 【未実装】管理者ページ（/admin.html）と POST /api/* に認証が無い。
+// URL を知っていれば誰でもレイアウト・家具・看板・Slack通知先を書き換えられる。
+// 社内限定での利用を前提にした暫定状態で、ID/パスワードによる認証は別途入れる予定。
+// Webhook URL だけは、登録できる接頭辞を絞ることで踏み台化を防いである（config.js）。
 
 import { Room } from "./room.js";
 import { json, readWebhookUrl } from "./helpers.js";
@@ -11,6 +16,7 @@ import { SLACK_WEBHOOK_PREFIX } from "./config.js";
 export { Room };
 
 // KV に JSON をそのまま読み書きするエンドポイント（GET=取得 / POST=保存）。
+// 中身の形は見ない（レイアウトも家具も看板も、そのまま預かって返すだけ）。
 // 対応しないメソッドは null を返し、呼び出し側で 404 に落とす。
 async function kvEndpoint(env, key, req) {
   if (req.method === "GET") {
@@ -63,6 +69,9 @@ const KV_ENDPOINTS = {
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
+
+    // 以下は上から順に試し、どれにも当たらなければ 404。
+    // 静的ファイル（public/ 以下）はここに来る前に assets 設定が返している。
 
     // WebSocket・SFU中継・反映通知は部屋（Durable Object）へ渡す
     if (url.pathname === "/ws" || url.pathname.startsWith("/rtc/") || url.pathname === "/api/refresh") {

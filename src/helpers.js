@@ -1,4 +1,5 @@
-// 状態を持たない純粋関数のまとめ（レスポンス生成・入力検証・転送量推定など）
+// 状態を持たない純粋関数のまとめ（レスポンス生成・入力検証・転送量推定など）。
+// ここに置く関数は env も this も参照しない。テストしたくなったらここから。
 
 import { GB, AUDIO_BPS, SCREEN_BPS, SCREEN_OFF_GB, VOICE_OFF_GB, NEAR, SLACK_WEBHOOK_PREFIX } from "./config.js";
 
@@ -19,7 +20,13 @@ export function cleanAvatar(a) {
   return out;
 }
 
-// オフィスコメントの受信データを検証・整形する（不正値や巨大文字列を防ぐ）
+// オフィスコメントの受信データを検証・整形する（不正値や巨大文字列を防ぐ）。
+//
+// 受け取った値は必ずここを通す。クライアントは誰でも書き換えられるので、
+// 描画側（public/map.js）が想定しない値（負の大きさなど）を入れさせない。
+//
+// w の上限がワールド幅なので、x が大きいと右へはみ出す矩形は作れる。
+// はみ出した分はキャンバス外で捨てられるだけなので、そこまでは詰めていない。
 export function cleanComment(c) {
   if (!c || typeof c !== "object") return null;
   const num = (v, d) => (Number.isFinite(+v) ? +v : d);
@@ -74,7 +81,12 @@ export function levelFor(bytes) {
   return "ok";
 }
 
-// 点がどの会話エリアにあるか（id または null）
+// 点がどの会話エリアにあるか（id または null）。
+//
+// public/office/store.js の zoneIdAt と同じ処理を、サーバー側にも持っている
+// （後ろから探す＝手前が勝つ／右端と下端は含めない）。サーバーからは public/ を
+// import できないための二重実装。片方だけ変えると「画面では会話エリアの中にいるのに
+// チャットが届かない」という気づきにくいずれ方をする。
 export function zoneIdAtWorld(zones, x, y) {
   for (let i = zones.length - 1; i >= 0; i--) {
     const z = zones[i];
@@ -83,7 +95,13 @@ export function zoneIdAtWorld(zones, x, y) {
   return null;
 }
 
-// 現在の購読グラフから 1秒あたりの下り転送量（バイト）を推定
+// 現在の購読グラフから 1秒あたりの下り転送量（バイト）を推定する。
+//
+// 「誰が誰の音声・画面を受け取っているか」を全員ぶん数え上げる。判定の条件は
+// public/office/voice.js の currentTargets と同じ（エリア内は同エリア、外は近接）。
+//
+// 全員×全員の二重ループなので、人数が増えたときに最初に重くなるのはここ。
+// 部屋が1つで人数が限られる前提で、そのまま書いてある。
 export function bytesPerSec(users, zones) {
   let bps = 0;
   for (const L of users) {
@@ -95,6 +113,7 @@ export function bytesPerSec(users, zones) {
       if (lz) sub = (pz === lz);                                   // エリア内：同じエリア
       else sub = (pz === null && Math.hypot(P.x - L.x, P.y - L.y) <= NEAR);  // エリア外：近接
       if (!sub) continue;
+      // config.js の値はビット毎秒なので、8で割ってバイト毎秒にする
       if (P.audio) bps += AUDIO_BPS / 8;
       if (P.screen) bps += SCREEN_BPS / 8;
     }
