@@ -173,6 +173,9 @@ L.push("`public/assets/` 以下のドット絵素材は**第三者の著作物**
 L.push("素材は Liberated Pixel Cup (LPC) 系のもので、");
 L.push("アバターは [Universal LPC Spritesheet Character Generator](https://liberatedpixelcup.github.io/Universal-LPC-Spritesheet-Character-Generator/) で生成しています。");
 L.push("");
+L.push("なお配信しているアバター画像は、配布物から**歩行アニメの部分（4方向×9コマ）だけを切り出したもの**です。");
+L.push("切り出し前の画像は `assets-src/avatar/` にあります。");
+L.push("");
 
 L.push("## 含まれるライセンス");
 L.push("");

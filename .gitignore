@@ -16,3 +16,9 @@ Thumbs.db
 
 # 組織固有の表示設定（公開リポジトリに含めない）
 public/config.local.js
+
+# アバター画像の生成物（assets-src から scripts/build-avatars.mjs が作る）
+public/assets/avatar/
+
+# Claude が会話に送ったファイルの保存先
+Claude outputs/
