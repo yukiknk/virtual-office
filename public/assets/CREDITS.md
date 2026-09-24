@@ -8,6 +8,9 @@
 素材は Liberated Pixel Cup (LPC) 系のもので、
 アバターは [Universal LPC Spritesheet Character Generator](https://liberatedpixelcup.github.io/Universal-LPC-Spritesheet-Character-Generator/) で生成しています。
 
+なお配信しているアバター画像は、配布物から**歩行アニメの部分（4方向×9コマ）だけを切り出したもの**です。
+切り出し前の画像は `assets-src/avatar/` にあります。
+
 ## 含まれるライセンス
 
 | ライセンス | 宣言数 | 条文 |
