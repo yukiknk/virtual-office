@@ -25,6 +25,7 @@ let sfuSessionId = null;
 let sfuPublished = false;     // マイクを送り始めたか（publish は一度だけ）
 const sfuSubs = new Map();    // "sessionId/trackName" -> { mid, kind, audioEl, videoEl }
 let voiceBusy = false;        // updateVoice の多重実行を防ぐ
+let sfuBroken = false;        // 接続が壊れたことの記録。次の updateVoice が畳んで張り直す
 
 // ── 画面共有（送信専用） ──
 let screenStream = null;      // 自分の画面共有
@@ -42,6 +43,10 @@ export async function updateVoice() {
 	if (!store.myId || !store.ws || store.ws.readyState !== WebSocket.OPEN) return;  // 接続待ち
 	voiceBusy = true;
 	try {
+		// 接続が壊れていたら、まず畳む。この下の ensureSfuAndPublish が最初から張り直す。
+		// 畳むのをここでやるのは、通知が来た瞬間に畳むと、実行中の購読処理の足元で
+		// sfuPc が消えてしまうため。
+		if (sfuBroken) { sfuBroken = false; await teardownSfu(); }
 		if (store.me.away || store.budgetLevel === "voice_off") { await teardownSfu(); return; }   // 離席中は接続しない
 		await ensureSfuAndPublish();
 		await updateSubscriptions(currentTargets());
@@ -114,6 +119,7 @@ async function ensureSfuAndPublish() {
 		sfuSessionId = data.sessionId;
 		sfuPc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], bundlePolicy: "max-bundle" });
 		sfuPc.ontrack = onTrack;
+		watchConnection(sfuPc);
 	}
 	const track = localStream.getAudioTracks()[0];
 	if (!track) return;
@@ -127,6 +133,26 @@ async function ensureSfuAndPublish() {
 	await sfuPc.setRemoteDescription(answer.sessionDescription);
 	sfuPublished = true;
 	store.ws.send(JSON.stringify({ t: "publish", sessionId: sfuSessionId, audio: `mic-${store.myId}` }));
+}
+
+// 接続が壊れたことを記録する。実際に畳むのは updateVoice。
+//
+// これが無いと、Wi-Fi の切り替えやスリープ復帰で PeerConnection が死んでも
+// sfuPublished と sfuSubs が残ったままになり、声を送り直すことも
+// 受け直すこともないまま無音になる（退出して入り直すまで直らない）。
+//
+// pc を引数で受け取るのは、畳んだあと新しい PeerConnection に差し替わるため。
+// 古いほうから遅れて届いた通知で、新しい接続を巻き添えにしない。
+function watchConnection(pc) {
+	pc.onconnectionstatechange = () => {
+		if (pc !== sfuPc) return;   // すでに差し替わっている
+		const st = pc.connectionState;
+		if (st === "failed") { sfuBroken = true; return; }
+		// disconnected は一時的に出ることがあるので、続いていたときだけ壊れたとみなす
+		if (st === "disconnected") setTimeout(() => {
+			if (pc === sfuPc && pc.connectionState === "disconnected") sfuBroken = true;
+		}, 5000);
+	};
 }
 
 // 受信トラックの再生（音声＝audio要素／画面＝オーバーレイ）。
@@ -181,15 +207,23 @@ async function updateSubscriptions(targetIds) {
 	for (const key of [...sfuSubs.keys()]) if (!want.has(key)) await unsubscribe(key);
 }
 
+// 1人ぶんの受信を開始する。
+//
+// sfuSubs への登録は「最後まで成功したとき」だけにしている。途中で失敗したものを
+// 登録してしまうと、updateSubscriptions が「購読済み」と判断して二度と張り直さず、
+// その相手の声だけが永久に届かなくなる（退出するまで直らない）。
+// 登録しなければ、次の周期（400ms後）に自動で再試行される。
 async function subscribe(key, t) {
 	const resp = await rtcFetch(`/rtc/sessions/${sfuSessionId}/tracks/new`, "POST", {
 		tracks: [{ location: "remote", sessionId: t.sessionId, trackName: t.trackName }],
 	});
-	const mid = resp.tracks && resp.tracks[0] && resp.tracks[0].mid;
+	const mid = resp && resp.tracks && resp.tracks[0] && resp.tracks[0].mid;
+	if (mid == null) return;   // 受信口が取れていない。登録せず次の周期へ譲る
+	// SFU が「今すぐ再ネゴせよ」と言ってきたら応じる（新しい受信口が増えたとき）。
+	// ここで失敗しても登録前なので、やはり次の周期で再試行される。
+	if (resp.requiresImmediateRenegotiation) await renegotiate(resp.sessionDescription);
 	const sub = { mid, kind: t.kind, audioEl: null, videoEl: null };
 	sfuSubs.set(key, sub);
-	// SFU が「今すぐ再ネゴせよ」と言ってきたら応じる（新しい受信口が増えたとき）
-	if (resp.requiresImmediateRenegotiation) await renegotiate(resp.sessionDescription);
 	attachSub(sub);   // mid から受信トラックを取り出して確実に表示/再生（複数共有でも取りこぼさない）
 }
 
