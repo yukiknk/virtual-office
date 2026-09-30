@@ -11,7 +11,7 @@
 // 転送量が増えると、まず画面共有、次に音声の順に止まる（applyBudget）。
 import { store, zoneIdAt } from "./store.js";
 import { GRID } from "../map.js";
-import { openMic, micIdOf, startLevelMeter, playTestTone } from "../devices.js";
+import { openMic, micIdOf, startLevelMeter, playTestTone, getSilentTrack } from "../devices.js";
 import { KEY, write } from "../storage.js";
 
 // エリア外での会話範囲。panel.js と src/config.js にも同じ値がある（変えるときは3か所）。
@@ -43,6 +43,7 @@ let sfuPc = null;             // SFU用の RTCPeerConnection
 let sfuSessionId = null;
 let sfuPublished = false;     // マイクを送り始めたか（publish は一度だけ）
 const sfuSubs = new Map();    // "sessionId/trackName" -> { mid, kind, audioEl, videoEl }
+const pendingClose = new Set();   // 閉じ損ねた受信口の mid。次の周期で閉じ直す
 let voiceBusy = false;        // updateVoice の多重実行を防ぐ
 let sfuBroken = false;        // 接続が壊れたことの記録。次の updateVoice が畳んで張り直す
 
@@ -74,6 +75,7 @@ export async function updateVoice() {
 		const targets = currentTargets();
 		await maybeReleaseMic(targets);
 		await updateSubscriptions(targets);
+		await closePending();
 	} catch (e) {
 		console.warn("[voice]", e);
 		// publish や購読の途中で失敗すると、送信口や購読が半端に残る。
@@ -161,7 +163,12 @@ async function releaseMic() {
 	if (!localStream) return;
 	if (stopMeter) { stopMeter(); stopMeter = null; }
 	setMeter(null);
-	if (micSender) { try { await micSender.replaceTrack(null); } catch { } }
+	// null ではなく無音に差し替える。null にすると送信そのものが止まり、
+	// SFU が相手への転送をやめてしまう（devices.js の getSilentTrack に経緯）。
+	if (micSender) {
+		const silent = getSilentTrack();
+		try { await micSender.replaceTrack(silent); } catch { }
+	}
 	for (const t of localStream.getAudioTracks()) t.stop();
 	localStream = null;
 }
@@ -322,14 +329,27 @@ async function unsubscribe(key) {
 	sfuSubs.delete(key);
 	if (sub.audioEl) sub.audioEl.remove();
 	if (sub.videoEl) { closeBigIfShowing(sub.videoEl.srcObject); sub.videoEl.remove(); }
-	// force:true で即時クローズ。クライアント側の再ネゴを挟まないので接続状態が崩れず、
-	// 離れて再度近づいたときの再購読が確実に成功する。
+	if (sub.mid != null) pendingClose.add(sub.mid);
+	await closePending();
+}
+
+// 閉じ損ねた受信口をまとめて閉じる。失敗したぶんは次の周期へ持ち越す。
+//
+// 以前はここの失敗を握り潰していた。sfuSubs からは消えているので閉じ直す機会が
+// 二度と来ず、SFU 側に死んだ受信口が溜まり続けていた（つけっぱなしで効いてくる）。
+//
+// force:true は即時クローズ。クライアント側の再ネゴを挟まないので接続状態が崩れず、
+// 離れて再度近づいたときの再購読が確実に成功する。
+async function closePending() {
+	if (!pendingClose.size || !sfuSessionId) return;
+	const mids = [...pendingClose];
 	try {
 		await rtcFetch(`/rtc/sessions/${sfuSessionId}/tracks/close`, "PUT", {
-			tracks: [{ mid: sub.mid }],
+			tracks: mids.map((mid) => ({ mid })),
 			force: true,
 		});
-	} catch { }
+		for (const mid of mids) pendingClose.delete(mid);
+	} catch { }   // 消さずに残し、次の周期で試し直す
 }
 
 // SFU から再ネゴを求められたときの応答
@@ -358,6 +378,8 @@ export async function teardownSfu() {
 	}
 	closeBig();
 	sfuSubs.clear();
+	// セッションごと消えるので、閉じ損ねの持ち越しも無意味になる（mid は次で振り直し）
+	pendingClose.clear();
 	if (sfuPublished) { try { store.ws.send(JSON.stringify({ t: "unpublish" })); } catch { } sfuPublished = false; }
 	if (sfuPc) { try { sfuPc.close(); } catch { } sfuPc = null; }
 	sfuSessionId = null;
