@@ -477,6 +477,47 @@ body::before {
 	transform: translateY(1px);
 }
 
+/* ── マイク・スピーカーのテスト ── */
+.test-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 6px;
+}
+
+/* 音量メーター。中の span の width を JS が書き換える。 */
+.level {
+	flex: 1;
+	height: 8px;
+	border-radius: 4px;
+	background: var(--line);
+	overflow: hidden;
+}
+
+.level>span {
+	display: block;
+	height: 100%;
+	width: 0;
+	background: var(--accent);
+	transition: width 60ms linear;
+}
+
+/* 高さを固定しておく。文言の出入りで下の要素がずれないようにするため。 */
+.test-note {
+	margin: 4px 0 0;
+	font-size: 12px;
+	color: var(--muted);
+	min-height: 1.1em;
+}
+
+.test-note.ok {
+	color: #2a7d3f;
+}
+
+.test-note.ng {
+	color: #a8541c;
+}
+
 .hint {
 	margin: 10px 0 0;
 	text-align: center;
