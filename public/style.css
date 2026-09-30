@@ -855,7 +855,53 @@ body {
 	margin-top: auto;
 	/* メニューの一番下へ寄せる */
 	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+#dock .dock-row {
+	display: flex;
 	gap: 10px;
+}
+
+/* 送っているマイク音量。ミュート中は voice.js が hidden にする。 */
+#mic-level {
+	height: 6px;
+	border-radius: 3px;
+	background: #c7ccc4;
+	overflow: hidden;
+}
+
+#mic-level>span {
+	display: block;
+	height: 100%;
+	width: 0;
+	background: #2a7d3f;
+	/* ON のボタンと同じ緑 */
+	transition: width 60ms linear;
+}
+
+/* スピーカー確認のボタン。押す頻度が低いので、ツールボタンより弱い見た目にする。 */
+#dock .dock-mini {
+	width: 100%;
+	margin: 0;
+	padding: 6px;
+	border: 1px solid #c7ccc4;
+	border-radius: 10px;
+	background: transparent;
+	color: #4a5348;
+	font-family: inherit;
+	font-size: 11px;
+	cursor: pointer;
+}
+
+#dock .dock-mini:hover {
+	background: #eef0ec;
+}
+
+#dock .dock-mini:disabled {
+	opacity: 0.5;
+	cursor: default;
 }
 
 #dock .toolbtn {

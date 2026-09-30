@@ -88,11 +88,22 @@
 				<div class="field">
 					<label for="mic-select">マイク</label>
 					<select id="mic-select"></select>
+					<!-- テストの動作は login.js。form の中なので type="button" が必須。
+					     外すと Enter やクリックで入室してしまう。 -->
+					<div class="test-row">
+						<button type="button" id="mic-test-btn" class="ghost-btn">マイクをテスト</button>
+						<div class="level" id="mic-level" hidden><span></span></div>
+					</div>
+					<p id="mic-test-note" class="test-note"></p>
 				</div>
 
 				<div class="field">
 					<label for="spk-select">スピーカー</label>
 					<select id="spk-select"></select>
+					<div class="test-row">
+						<button type="button" id="spk-test-btn" class="ghost-btn">テスト音を鳴らす</button>
+					</div>
+					<p id="spk-test-note" class="test-note"></p>
 				</div>
 
 				<!-- マイクが許可されなかったときだけ login.js が文言を入れる。 -->

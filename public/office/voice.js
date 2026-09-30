@@ -11,6 +11,8 @@
 // 転送量が増えると、まず画面共有、次に音声の順に止まる（applyBudget）。
 import { store, zoneIdAt } from "./store.js";
 import { GRID } from "../map.js";
+import { openMic, micIdOf, startLevelMeter, playTestTone } from "../devices.js";
+import { KEY, write } from "../storage.js";
 
 // エリア外での会話範囲。panel.js と src/config.js にも同じ値がある（変えるときは3か所）。
 const NEAR = GRID * 2;
@@ -24,12 +26,18 @@ const MIC_RELEASE_NEAR_MS = 30_000;    // 近くに人がいる＝また話す�
 
 // ── マイク ──
 // micOn は「利用者の意思」、localStream は「デバイスの実体」で、別物として扱う。
-// enabled = false ではデバイスが開いたままになり、Bluetooth が低音質のまま戻らない。
+//
+// ミュートは2段階。片方だけでは足りない。
+//   1. track.enabled = false … 押した瞬間に送信が止まる（相手に届かなくなる）
+//   2. track.stop()          … 猶予のあとデバイスを閉じる（Bluetooth が高音質に戻る）
+// 1 だけではデバイスが開いたままで、Bluetooth が低音質のまま戻らない。
+// 2 をすぐ行うと、開け直すたびにプロファイルの切り替えが起きて話し出しが欠ける。
 let localStream = null;       // 開いているマイク。null なら閉じている
 let micOn = false;            // ミュートを解除しているか（ボタンの状態）
 let micFailed = false;        // マイクが使えないとき true（再試行を止める）
 let micSender = null;         // 自分の声を送る口。トラックを差し替えるために持っておく
 let mutedAt = 0;              // ミュートにした時刻。0 ならミュートしていない
+let stopMeter = null;         // 音量メーターの停止関数。マイクを閉じるときに呼ぶ
 // ── SFU（マイク送信＋受信） ──
 let sfuPc = null;             // SFU用の RTCPeerConnection
 let sfuSessionId = null;
@@ -50,7 +58,7 @@ let selfTile = null;          // 自分の共有プレビュー（自分の画�
 // voiceBusy が多重実行ガード。await を挟むので、前回が終わる前に次が入ると
 // SFU とのやりとりが交錯する。main.js が重複呼び出しを気にしなくていいのはこれのおかげ。
 export async function updateVoice() {
-	if (voiceBusy || micFailed) return;
+	if (voiceBusy) return;
 	if (!store.myId || !store.ws || store.ws.readyState !== WebSocket.OPEN) return;  // 接続待ち
 	voiceBusy = true;
 	try {
@@ -60,15 +68,21 @@ export async function updateVoice() {
 		if (sfuBroken) { sfuBroken = false; await teardownSfu(); }
 		if (store.me.away || store.budgetLevel === "voice_off") { await teardownSfu(); return; }   // 離席中は接続しない
 		await ensureSession();
-		if (micOn) await attachMic();   // micOn のまま接続が張り直された場合はここで付け直す
+		// micOn のまま接続が張り直された場合はここで付け直す。
+		// micFailed のときに飛ばすのは、400msごとに許可を求め続けないため。
+		if (micOn && !micFailed) await attachMic();
 		const targets = currentTargets();
 		await maybeReleaseMic(targets);
 		await updateSubscriptions(targets);
 	} catch (e) {
 		console.warn("[voice]", e);
+		// publish や購読の途中で失敗すると、送信口や購読が半端に残る。
+		// 次の周期で畳んで張り直させる（そのまま続けると二重に publish される）。
+		sfuBroken = true;
 		// マイクを拒否されたら二度と試さない。放っておくと400msごとに許可を求め続ける。
 		if (e && e.name === "NotAllowedError") {
 			micFailed = true;
+			micOn = false;   // 送るのは諦める。相手の声を受け取るほうは続ける
 			setToolBtn("mic-btn", { on: false, icon: "🚫", label: "マイク不可" });
 		}
 	} finally {
@@ -119,21 +133,34 @@ async function rtcFetch(path, method, body) {
 async function attachMic() {
 	mutedAt = 0;
 	if (!localStream) {
-		const micId = store.micId;
-		localStream = await navigator.mediaDevices.getUserMedia({
-			audio: micId ? { deviceId: { exact: micId } } : true,
-		});
+		localStream = await openMic(store.micId);
+		// 代替のマイクで開けた場合は選択を書き直す。
+		// そのままだと、次にミュートを解除したときも同じ exact で失敗し続ける。
+		const got = micIdOf(localStream);
+		if (got && got !== store.micId) { store.micId = got; write(KEY.micId, got); }
+		startMeter();
 	}
+	setMicEnabled(true);   // ミュートで送信を止めてあるので戻す
 	const track = localStream.getAudioTracks()[0];
 	if (!track) return;
 	if (!sfuPublished) await publishMic(track);
 	else if (micSender) await micSender.replaceTrack(track);
 }
 
+// 送信だけを止める／再開する。デバイスの開閉とは別物。
+// enabled = false はデバイスを閉じないので、Bluetooth の切り替えを起こさずに
+// 相手へ一切届かなくできる。
+function setMicEnabled(on) {
+	if (!localStream) return;
+	for (const t of localStream.getAudioTracks()) t.enabled = on;
+}
+
 // マイクを本当に閉じる。Bluetooth はここで高音質モードへ戻る。
 async function releaseMic() {
 	mutedAt = 0;
 	if (!localStream) return;
+	if (stopMeter) { stopMeter(); stopMeter = null; }
+	setMeter(null);
 	if (micSender) { try { await micSender.replaceTrack(null); } catch { } }
 	for (const t of localStream.getAudioTracks()) t.stop();
 	localStream = null;
@@ -145,7 +172,10 @@ async function releaseMic() {
 // 相手が離れて誰もいなくなったあとも、長いほうの猶予を待ち続けてしまう。
 // 逆に、誰もいないときにミュートしてから人が近づいてきた場合は、長いほうへ切り替わる。
 async function maybeReleaseMic(targets) {
-	if (micOn || !mutedAt || !localStream) return;
+	if (micOn || !localStream) return;
+	// ミュート解除に失敗すると、マイクは開いたのに mutedAt が 0 のまま残る。
+	// そのままでは永久に閉じられないので、ここで押し直す。
+	if (!mutedAt) mutedAt = Date.now();
 	const ms = targets.size === 0 ? MIC_RELEASE_ALONE_MS : MIC_RELEASE_NEAR_MS;
 	if (Date.now() - mutedAt >= ms) await releaseMic();
 }
@@ -226,8 +256,15 @@ function attachStream(sub, stream) {
 		sub.audioEl = document.createElement("audio");
 		sub.audioEl.autoplay = true;
 		document.body.appendChild(sub.audioEl);
-		// 入室画面で選んだスピーカーへ出す（対応していないブラウザでは無視される）
-		if (store.speakerId && sub.audioEl.setSinkId) sub.audioEl.setSinkId(store.speakerId).catch(() => { });
+		// 入室画面で選んだスピーカーへ出す（対応していないブラウザでは無視される）。
+		// 失敗したら選択を捨てる。deviceId はマイクと同じく古くなるので、抱え続けると
+		// 以後ずっと黙って既定のスピーカーへ落ちたままになる。
+		if (store.speakerId && sub.audioEl.setSinkId) {
+			sub.audioEl.setSinkId(store.speakerId).catch(() => {
+				store.speakerId = null;
+				write(KEY.speakerId, "");
+			});
+		}
 	}
 	sub.audioEl.srcObject = stream;
 	sub.audioEl.play?.().catch(() => { });
@@ -382,6 +419,32 @@ async function stopScreen() {
 	setScreenBtn(false);
 }
 
+// ── 音量メーター ──
+// 送っている音声そのものを見せる。「声が届かない」と相談を受けたときに、
+// マイクが拾えていないのか、送信側の問題なのかを本人が切り分けられる。
+function startMeter() {
+	if (stopMeter) stopMeter();
+	stopMeter = startLevelMeter(localStream, setMeter);
+}
+
+// v が null なら非表示（ミュート中）。
+function setMeter(v) {
+	const el = document.getElementById("mic-level");
+	if (!el) return;
+	el.hidden = v === null;
+	if (v !== null) el.firstElementChild.style.width = Math.round(v * 100) + "%";
+}
+
+// 失敗の理由ごとに、次にやることを書く。
+// エラー名も併記する。報告を受けたときに原因を絞れるようにするため。
+function micErrorText(err) {
+	const name = (err && err.name) || "Error";
+	if (name === "NotAllowedError") return "マイクの使用が許可されていません。アドレスバーの鍵アイコンからマイクを「許可」にしてください。";
+	if (name === "NotReadableError") return "マイクを他のアプリが使っています。Teams や Zoom を閉じてから、もう一度お試しください。";
+	if (name === "NotFoundError" || name === "OverconstrainedError") return "選んだマイクが見つかりません。一度退出して、入室画面でマイクを選び直してください。";
+	return `マイクを使えませんでした（${name}）。もう一度お試しください。`;
+}
+
 function setMicBtn() {
 	setToolBtn("mic-btn", { on: micOn, icon: micOn ? "🎤" : "🔇", label: micOn ? "ON" : "ミュート中" });
 }
@@ -457,18 +520,23 @@ export function initVoiceUI() {
 		micBtn.addEventListener("click", async () => {
 			if (micOn) {
 				micOn = false;
-				mutedAt = Date.now();   // 実際に閉じるのは updateVoice（猶予を毎回見直す）
+				// 送信はこの場で止める。デバイスを閉じるまで待つと、その間ずっと
+				// 相手に声が届いてしまう（近くに人がいると猶予は30秒）。
+				setMicEnabled(false);
+				mutedAt = Date.now();   // デバイスを閉じるのは updateVoice（猶予を毎回見直す）
 				setMicBtn();
 				return;
 			}
 			// Bluetooth だと開くのに1〜2秒かかることがあるので、待っていることを見せる
+			micFailed = false;   // 手で押し直したときは、もう一度試す
 			setToolBtn("mic-btn", { label: "準備中…" });
 			try {
 				await attachMic();
 				micOn = true;
-			} catch {
+			} catch (err) {
 				micOn = false;
-				alert("マイクを使えませんでした。ブラウザの許可を確認してください。");
+				mutedAt = Date.now();   // 開いたまま失敗した場合に閉じられるようにする
+				alert(micErrorText(err));
 			}
 			setMicBtn();
 		});
@@ -479,6 +547,21 @@ export function initVoiceUI() {
 	const resume = () => document.querySelectorAll("audio").forEach((a) => a.play?.().catch(() => { }));
 	window.addEventListener("pointerdown", resume, { once: true });
 	window.addEventListener("keydown", resume, { once: true });
+	// スピーカーの確認音。マイク側の処理には触らないので、会話中に押しても
+	// 接続には影響しない。「相手の声が聞こえない」ときの切り分けに使う。
+	const spkBtn = document.getElementById("spk-test-btn");
+	if (spkBtn) {
+		spkBtn.addEventListener("click", async () => {
+			spkBtn.disabled = true;
+			const routed = await playTestTone(store.speakerId);
+			spkBtn.textContent = routed ? "🔊 鳴らしました" : "🔊 既定のスピーカーで鳴らしました";
+			setTimeout(() => {
+				spkBtn.disabled = false;
+				spkBtn.textContent = "🔊 スピーカーをテスト";
+			}, 2500);
+		});
+	}
+
 	const screenBtn = document.getElementById("screen-btn");
 	if (screenBtn) {
 		screenBtn.addEventListener("click", () => { if (screenStream) stopScreen(); else startScreen(); });

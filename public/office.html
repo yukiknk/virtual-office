@@ -65,14 +65,20 @@
 			     ic（アイコン）と lb（ラベル）を分けてあるのは、状態に応じて
 			     voice.js が両方を書き換えるため。 -->
 			<div id="dock">
-				<button type="button" id="mic-btn" class="toolbtn">
-					<span class="ic">🔇</span>
-					<span class="lb">ミュート中</span>
-				</button>
-				<button type="button" id="screen-btn" class="toolbtn">
-					<span class="ic">🖥️</span>
-					<span class="lb">画面共有</span>
-				</button>
+				<!-- 送っているマイク音量。ミュート中は voice.js が hidden にする。 -->
+				<div class="level" id="mic-level" hidden><span></span></div>
+				<div class="dock-row">
+					<button type="button" id="mic-btn" class="toolbtn">
+						<span class="ic">🔇</span>
+						<span class="lb">ミュート中</span>
+					</button>
+					<button type="button" id="screen-btn" class="toolbtn">
+						<span class="ic">🖥️</span>
+						<span class="lb">画面共有</span>
+					</button>
+				</div>
+				<!-- スピーカーの確認。voice.js が鳴らす。 -->
+				<button type="button" id="spk-test-btn" class="dock-mini">🔊 スピーカーをテスト</button>
 			</div>
 		</aside>
 
