@@ -66,6 +66,37 @@ export function startLevelMeter(stream, onLevel) {
 	return () => { live = false; try { ac.close(); } catch { } };
 }
 
+// 無音を送り続けるためのトラック。
+//
+// マイクを閉じたあとも「SFU から見ると送信が続いている」状態を保つためのもの。
+// 送信そのものを止める（replaceTrack(null)）と、止まったままの時間が続いたときに
+// SFU が相手への転送をやめてしまい、ミュートを解除しても相手に届かなくなる。
+// リロードするまで直らないので、止めずに無音を流しておく。
+//
+// 0 をかけた発振器を繋いでいるのは、音を出さずにグラフを動かし続けるため。
+// 何も繋がない出力先でも無音にはなるが、処理ごと止まってしまうブラウザがある。
+let silentCtx = null;
+let silentTrack = null;
+
+export function getSilentTrack() {
+	const AC = window.AudioContext || window.webkitAudioContext;
+	if (!AC) return null;
+	if (silentTrack && silentTrack.readyState === "live") {
+		// 自動再生制限で止まっていると無音すら流れないので、そのつど起こす
+		if (silentCtx.state === "suspended") silentCtx.resume().catch(() => { });
+		return silentTrack;
+	}
+	silentCtx = new AC();
+	const osc = silentCtx.createOscillator();
+	const gain = silentCtx.createGain();
+	gain.gain.value = 0;
+	const dest = silentCtx.createMediaStreamDestination();
+	osc.connect(gain).connect(dest);
+	osc.start();
+	silentTrack = dest.stream.getAudioTracks()[0];
+	return silentTrack;
+}
+
 // スピーカーの確認音。短い2音を鳴らす。
 //
 // 戻り値は「選んだスピーカーへ出せたか」。出力先の指定（setSinkId）は
