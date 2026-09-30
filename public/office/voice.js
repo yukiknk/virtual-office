@@ -15,10 +15,21 @@ import { GRID } from "../map.js";
 // エリア外での会話範囲。panel.js と src/config.js にも同じ値がある（変えるときは3か所）。
 const NEAR = GRID * 2;
 
+// マイクを閉じるまでの猶予。
+// Bluetooth はマイクの開閉のたびにプロファイルが切り替わり、1〜2秒ほど双方向で
+// 音が途切れる（相手の声も聞こえなくなる）。会話中は切り替えたくないので、
+// 近くに人がいるときは長く待つ。
+const MIC_RELEASE_ALONE_MS = 3_000;    // 近くに誰もいない＝会話していない
+const MIC_RELEASE_NEAR_MS = 30_000;    // 近くに人がいる＝また話す可能性が高い
+
 // ── マイク ──
-let localStream = null;       // 自分のマイク
-let micOn = false;            // 送話ON/OFF
+// micOn は「利用者の意思」、localStream は「デバイスの実体」で、別物として扱う。
+// enabled = false ではデバイスが開いたままになり、Bluetooth が低音質のまま戻らない。
+let localStream = null;       // 開いているマイク。null なら閉じている
+let micOn = false;            // ミュートを解除しているか（ボタンの状態）
 let micFailed = false;        // マイクが使えないとき true（再試行を止める）
+let micSender = null;         // 自分の声を送る口。トラックを差し替えるために持っておく
+let micReleaseTimer = null;   // ミュート後、マイクを閉じるまでの猶予
 // ── SFU（マイク送信＋受信） ──
 let sfuPc = null;             // SFU用の RTCPeerConnection
 let sfuSessionId = null;
@@ -43,12 +54,13 @@ export async function updateVoice() {
 	if (!store.myId || !store.ws || store.ws.readyState !== WebSocket.OPEN) return;  // 接続待ち
 	voiceBusy = true;
 	try {
-		// 接続が壊れていたら、まず畳む。この下の ensureSfuAndPublish が最初から張り直す。
+		// 接続が壊れていたら、まず畳む。この下の ensureSession が最初から張り直す。
 		// 畳むのをここでやるのは、通知が来た瞬間に畳むと、実行中の購読処理の足元で
 		// sfuPc が消えてしまうため。
 		if (sfuBroken) { sfuBroken = false; await teardownSfu(); }
 		if (store.me.away || store.budgetLevel === "voice_off") { await teardownSfu(); return; }   // 離席中は接続しない
-		await ensureSfuAndPublish();
+		await ensureSession();
+		if (micOn) await attachMic();   // micOn のまま接続が張り直された場合はここで付け直す
 		await updateSubscriptions(currentTargets());
 	} catch (e) {
 		console.warn("[voice]", e);
@@ -98,32 +110,59 @@ async function rtcFetch(path, method, body) {
 	return data;
 }
 
-async function ensureMic() {
-	if (localStream) return localStream;
-	const micId = store.micId;
-	localStream = await navigator.mediaDevices.getUserMedia({
-		audio: micId ? { deviceId: { exact: micId } } : true,
-	});
-	// 入室した時点で SFU へ送り始めるが、トラックは無効のままにしておく。
-	// ミュートの切り替えが enabled の変更だけで済み、そのたびに SFU と再ネゴしなくてよくなる。
-	for (const t of localStream.getAudioTracks()) t.enabled = micOn;
-	return localStream;
-}
-
-// 自分のマイクをSFUへ publish（一度だけ）
-async function ensureSfuAndPublish() {
-	if (sfuPublished) return;
-	await ensureMic();
-	if (!sfuPc) {
-		const data = await rtcFetch("/rtc/sessions/new", "POST");
-		sfuSessionId = data.sessionId;
-		sfuPc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], bundlePolicy: "max-bundle" });
-		sfuPc.ontrack = onTrack;
-		watchConnection(sfuPc);
+// マイクを開いて送信口につなぐ。ミュートを解除したときだけ呼ぶ。
+//
+// 初回は送信口ごと作って全員へ知らせる（publishMic）。2回目以降は replaceTrack で
+// 差し替えるだけなので、SFU との再ネゴは起きない。
+async function attachMic() {
+	clearTimeout(micReleaseTimer);
+	micReleaseTimer = null;
+	if (!localStream) {
+		const micId = store.micId;
+		localStream = await navigator.mediaDevices.getUserMedia({
+			audio: micId ? { deviceId: { exact: micId } } : true,
+		});
 	}
 	const track = localStream.getAudioTracks()[0];
 	if (!track) return;
+	if (!sfuPublished) await publishMic(track);
+	else if (micSender) await micSender.replaceTrack(track);
+}
+
+// マイクを本当に閉じる。Bluetooth はここで高音質モードへ戻る。
+async function releaseMic() {
+	clearTimeout(micReleaseTimer);
+	micReleaseTimer = null;
+	if (!localStream) return;
+	if (micSender) { try { await micSender.replaceTrack(null); } catch { } }
+	for (const t of localStream.getAudioTracks()) t.stop();
+	localStream = null;
+}
+
+// ミュートされたら猶予つきで閉じる。猶予の途中で解除されれば attachMic が取り消す。
+function scheduleMicRelease() {
+	clearTimeout(micReleaseTimer);
+	const ms = currentTargets().size === 0 ? MIC_RELEASE_ALONE_MS : MIC_RELEASE_NEAR_MS;
+	micReleaseTimer = setTimeout(releaseMic, ms);
+}
+
+// 自分のマイクをSFUへ publish（一度だけ）
+// SFU のセッションと接続だけ用意する。マイクは開かない。
+// 相手の声を受け取るのに必要なのはここまでで、自分の声を送るのは別（publishMic）。
+async function ensureSession() {
+	if (sfuPc) return;
+	const data = await rtcFetch("/rtc/sessions/new", "POST");
+	sfuSessionId = data.sessionId;
+	sfuPc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], bundlePolicy: "max-bundle" });
+	sfuPc.ontrack = onTrack;
+	watchConnection(sfuPc);
+}
+
+// 自分の声を送り始める。初めてミュートを解除したときに一度だけ走る。
+// 一度も喋らない人は publish しないので、その人ぶんの通信は誰にも発生しない。
+async function publishMic(track) {
 	const tr = sfuPc.addTransceiver(track, { direction: "sendonly" });
+	micSender = tr.sender;
 	const offer = await sfuPc.createOffer();
 	await sfuPc.setLocalDescription(offer);
 	const answer = await rtcFetch(`/rtc/sessions/${sfuSessionId}/tracks/new`, "POST", {
@@ -281,6 +320,9 @@ export async function teardownSfu() {
 	if (sfuPublished) { try { store.ws.send(JSON.stringify({ t: "unpublish" })); } catch { } sfuPublished = false; }
 	if (sfuPc) { try { sfuPc.close(); } catch { } sfuPc = null; }
 	sfuSessionId = null;
+	// 離席・転送量の上限・接続の張り直しでここへ来る。いずれもマイクは即座に閉じる。
+	micSender = null;
+	await releaseMic();
 }
 
 // ── 画面共有（エリア内外どこでも・SFU） ──
@@ -334,6 +376,10 @@ async function stopScreen() {
 	screenSessionId = null;
 	try { store.ws.send(JSON.stringify({ t: "unpublish", kind: "screen" })); } catch { }
 	setScreenBtn(false);
+}
+
+function setMicBtn() {
+	setToolBtn("mic-btn", { on: micOn, icon: micOn ? "🎤" : "🔇", label: micOn ? "ON" : "ミュート中" });
 }
 
 function setScreenBtn(active) {
@@ -405,14 +451,22 @@ export function initVoiceUI() {
 	const micBtn = document.getElementById("mic-btn");
 	if (micBtn) {
 		micBtn.addEventListener("click", async () => {
+			if (micOn) {
+				micOn = false;
+				setMicBtn();
+				scheduleMicRelease();   // すぐには閉じない（猶予は近くに人がいるかで変わる）
+				return;
+			}
+			// Bluetooth だと開くのに1〜2秒かかることがあるので、待っていることを見せる
+			setToolBtn("mic-btn", { label: "準備中…" });
 			try {
-				await ensureMic();
-				micOn = !micOn;
-				for (const t of localStream.getAudioTracks()) t.enabled = micOn;
-				setToolBtn("mic-btn", { on: micOn, icon: micOn ? "🎤" : "🔇", label: micOn ? "ON" : "ミュート中" });
+				await attachMic();
+				micOn = true;
 			} catch {
+				micOn = false;
 				alert("マイクを使えませんでした。ブラウザの許可を確認してください。");
 			}
+			setMicBtn();
 		});
 	}
 
