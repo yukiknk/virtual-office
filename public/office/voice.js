@@ -11,7 +11,7 @@
 // 転送量が増えると、まず画面共有、次に音声の順に止まる（applyBudget）。
 import { store, zoneIdAt } from "./store.js";
 import { GRID } from "../map.js";
-import { openMic, micIdOf, startLevelMeter } from "../devices.js";
+import { openMic, micIdOf, startLevelMeter, playTestTone } from "../devices.js";
 import { KEY, write } from "../storage.js";
 
 // エリア外での会話範囲。panel.js と src/config.js にも同じ値がある（変えるときは3か所）。
@@ -26,7 +26,12 @@ const MIC_RELEASE_NEAR_MS = 30_000;    // 近くに人がいる＝また話す�
 
 // ── マイク ──
 // micOn は「利用者の意思」、localStream は「デバイスの実体」で、別物として扱う。
-// enabled = false ではデバイスが開いたままになり、Bluetooth が低音質のまま戻らない。
+//
+// ミュートは2段階。片方だけでは足りない。
+//   1. track.enabled = false … 押した瞬間に送信が止まる（相手に届かなくなる）
+//   2. track.stop()          … 猶予のあとデバイスを閉じる（Bluetooth が高音質に戻る）
+// 1 だけではデバイスが開いたままで、Bluetooth が低音質のまま戻らない。
+// 2 をすぐ行うと、開け直すたびにプロファイルの切り替えが起きて話し出しが欠ける。
 let localStream = null;       // 開いているマイク。null なら閉じている
 let micOn = false;            // ミュートを解除しているか（ボタンの状態）
 let micFailed = false;        // マイクが使えないとき true（再試行を止める）
@@ -71,6 +76,9 @@ export async function updateVoice() {
 		await updateSubscriptions(targets);
 	} catch (e) {
 		console.warn("[voice]", e);
+		// publish や購読の途中で失敗すると、送信口や購読が半端に残る。
+		// 次の周期で畳んで張り直させる（そのまま続けると二重に publish される）。
+		sfuBroken = true;
 		// マイクを拒否されたら二度と試さない。放っておくと400msごとに許可を求め続ける。
 		if (e && e.name === "NotAllowedError") {
 			micFailed = true;
@@ -132,10 +140,19 @@ async function attachMic() {
 		if (got && got !== store.micId) { store.micId = got; write(KEY.micId, got); }
 		startMeter();
 	}
+	setMicEnabled(true);   // ミュートで送信を止めてあるので戻す
 	const track = localStream.getAudioTracks()[0];
 	if (!track) return;
 	if (!sfuPublished) await publishMic(track);
 	else if (micSender) await micSender.replaceTrack(track);
+}
+
+// 送信だけを止める／再開する。デバイスの開閉とは別物。
+// enabled = false はデバイスを閉じないので、Bluetooth の切り替えを起こさずに
+// 相手へ一切届かなくできる。
+function setMicEnabled(on) {
+	if (!localStream) return;
+	for (const t of localStream.getAudioTracks()) t.enabled = on;
 }
 
 // マイクを本当に閉じる。Bluetooth はここで高音質モードへ戻る。
@@ -239,8 +256,15 @@ function attachStream(sub, stream) {
 		sub.audioEl = document.createElement("audio");
 		sub.audioEl.autoplay = true;
 		document.body.appendChild(sub.audioEl);
-		// 入室画面で選んだスピーカーへ出す（対応していないブラウザでは無視される）
-		if (store.speakerId && sub.audioEl.setSinkId) sub.audioEl.setSinkId(store.speakerId).catch(() => { });
+		// 入室画面で選んだスピーカーへ出す（対応していないブラウザでは無視される）。
+		// 失敗したら選択を捨てる。deviceId はマイクと同じく古くなるので、抱え続けると
+		// 以後ずっと黙って既定のスピーカーへ落ちたままになる。
+		if (store.speakerId && sub.audioEl.setSinkId) {
+			sub.audioEl.setSinkId(store.speakerId).catch(() => {
+				store.speakerId = null;
+				write(KEY.speakerId, "");
+			});
+		}
 	}
 	sub.audioEl.srcObject = stream;
 	sub.audioEl.play?.().catch(() => { });
@@ -496,7 +520,10 @@ export function initVoiceUI() {
 		micBtn.addEventListener("click", async () => {
 			if (micOn) {
 				micOn = false;
-				mutedAt = Date.now();   // 実際に閉じるのは updateVoice（猶予を毎回見直す）
+				// 送信はこの場で止める。デバイスを閉じるまで待つと、その間ずっと
+				// 相手に声が届いてしまう（近くに人がいると猶予は30秒）。
+				setMicEnabled(false);
+				mutedAt = Date.now();   // デバイスを閉じるのは updateVoice（猶予を毎回見直す）
 				setMicBtn();
 				return;
 			}
@@ -520,6 +547,21 @@ export function initVoiceUI() {
 	const resume = () => document.querySelectorAll("audio").forEach((a) => a.play?.().catch(() => { }));
 	window.addEventListener("pointerdown", resume, { once: true });
 	window.addEventListener("keydown", resume, { once: true });
+	// スピーカーの確認音。マイク側の処理には触らないので、会話中に押しても
+	// 接続には影響しない。「相手の声が聞こえない」ときの切り分けに使う。
+	const spkBtn = document.getElementById("spk-test-btn");
+	if (spkBtn) {
+		spkBtn.addEventListener("click", async () => {
+			spkBtn.disabled = true;
+			const routed = await playTestTone(store.speakerId);
+			spkBtn.textContent = routed ? "🔊 鳴らしました" : "🔊 既定のスピーカーで鳴らしました";
+			setTimeout(() => {
+				spkBtn.disabled = false;
+				spkBtn.textContent = "🔊 スピーカーをテスト";
+			}, 2500);
+		});
+	}
+
 	const screenBtn = document.getElementById("screen-btn");
 	if (screenBtn) {
 		screenBtn.addEventListener("click", () => { if (screenStream) stopScreen(); else startScreen(); });
