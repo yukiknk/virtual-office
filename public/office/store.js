@@ -21,13 +21,17 @@ export const SHEETS = {
 // 入室画面でアバターを選ばなかったときの既定。null は「そのレイヤーを描かない」。
 // 自分の初期値としてだけでなく、他人のアバターがまだ届いていないときの
 // 代わりとしても使う（scene.js）。
+//
+// 実在しないファイル名を書くと画像が404になり、ready にならないまま
+// scene.js の代替表示（丸）に落ちる。エラーも出ないので原因が分かりにくい。
+// 素材を入れ替えたときは、ここも assets-src/avatar/ の中身と突き合わせること。
 export const DEFAULT_AVATAR = {
-	head: "character-spritesheet.png",
-	hair: "character-spritesheet.png",
-	body: "character-spritesheet.png",
-	tops: "character-spritesheet.png",
-	bottoms: "character-spritesheet.png",
-	shoes: "character-spritesheet.png",
+	head: "person__light.png",
+	hair: "afro__black.png",
+	body: "person__light.png",
+	tops: "longsleeve_laced__black.png",
+	bottoms: "long_pants__black.png",
+	shoes: "shoes__black.png",
 	wings: null,
 	accessory: null,
 };
