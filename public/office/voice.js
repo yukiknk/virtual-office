@@ -29,7 +29,7 @@ let localStream = null;       // 開いているマイク。null なら閉じて
 let micOn = false;            // ミュートを解除しているか（ボタンの状態）
 let micFailed = false;        // マイクが使えないとき true（再試行を止める）
 let micSender = null;         // 自分の声を送る口。トラックを差し替えるために持っておく
-let micReleaseTimer = null;   // ミュート後、マイクを閉じるまでの猶予
+let mutedAt = 0;              // ミュートにした時刻。0 ならミュートしていない
 // ── SFU（マイク送信＋受信） ──
 let sfuPc = null;             // SFU用の RTCPeerConnection
 let sfuSessionId = null;
@@ -61,7 +61,9 @@ export async function updateVoice() {
 		if (store.me.away || store.budgetLevel === "voice_off") { await teardownSfu(); return; }   // 離席中は接続しない
 		await ensureSession();
 		if (micOn) await attachMic();   // micOn のまま接続が張り直された場合はここで付け直す
-		await updateSubscriptions(currentTargets());
+		const targets = currentTargets();
+		await maybeReleaseMic(targets);
+		await updateSubscriptions(targets);
 	} catch (e) {
 		console.warn("[voice]", e);
 		// マイクを拒否されたら二度と試さない。放っておくと400msごとに許可を求め続ける。
@@ -115,8 +117,7 @@ async function rtcFetch(path, method, body) {
 // 初回は送信口ごと作って全員へ知らせる（publishMic）。2回目以降は replaceTrack で
 // 差し替えるだけなので、SFU との再ネゴは起きない。
 async function attachMic() {
-	clearTimeout(micReleaseTimer);
-	micReleaseTimer = null;
+	mutedAt = 0;
 	if (!localStream) {
 		const micId = store.micId;
 		localStream = await navigator.mediaDevices.getUserMedia({
@@ -131,19 +132,22 @@ async function attachMic() {
 
 // マイクを本当に閉じる。Bluetooth はここで高音質モードへ戻る。
 async function releaseMic() {
-	clearTimeout(micReleaseTimer);
-	micReleaseTimer = null;
+	mutedAt = 0;
 	if (!localStream) return;
 	if (micSender) { try { await micSender.replaceTrack(null); } catch { } }
 	for (const t of localStream.getAudioTracks()) t.stop();
 	localStream = null;
 }
 
-// ミュートされたら猶予つきで閉じる。猶予の途中で解除されれば attachMic が取り消す。
-function scheduleMicRelease() {
-	clearTimeout(micReleaseTimer);
-	const ms = currentTargets().size === 0 ? MIC_RELEASE_ALONE_MS : MIC_RELEASE_NEAR_MS;
-	micReleaseTimer = setTimeout(releaseMic, ms);
+// ミュートが続いていればマイクを閉じる。updateVoice から毎回呼ばれる。
+//
+// 猶予はそのつど計算し直す。ミュートした時点の状況で決め打ちにすると、
+// 相手が離れて誰もいなくなったあとも、長いほうの猶予を待ち続けてしまう。
+// 逆に、誰もいないときにミュートしてから人が近づいてきた場合は、長いほうへ切り替わる。
+async function maybeReleaseMic(targets) {
+	if (micOn || !mutedAt || !localStream) return;
+	const ms = targets.size === 0 ? MIC_RELEASE_ALONE_MS : MIC_RELEASE_NEAR_MS;
+	if (Date.now() - mutedAt >= ms) await releaseMic();
 }
 
 // 自分のマイクをSFUへ publish（一度だけ）
@@ -453,8 +457,8 @@ export function initVoiceUI() {
 		micBtn.addEventListener("click", async () => {
 			if (micOn) {
 				micOn = false;
+				mutedAt = Date.now();   // 実際に閉じるのは updateVoice（猶予を毎回見直す）
 				setMicBtn();
-				scheduleMicRelease();   // すぐには閉じない（猶予は近くに人がいるかで変わる）
 				return;
 			}
 			// Bluetooth だと開くのに1〜2秒かかることがあるので、待っていることを見せる
