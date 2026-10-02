@@ -12,7 +12,7 @@ import { updateVoice, initVoiceUI } from "./voice.js";
 import { initMove, update } from "./move.js";
 import { fit, draw, initPointer, sweepExpiredComments } from "./scene.js";
 import {
-	initCommentUI, initLinkPrompt, initChatUI, initAwayUI, initPeopleUI,
+	initCommentUI, initLinkPrompt, initChatUI, initAwayUI, initPeopleUI, initRailToggle,
 	updateRoster, updatePeople, updateLinkPrompt, updateChat, updateChatPlaceholder, updateUsage,
 	updateCallPrompt, updateCallAlert,
 } from "./panel.js";
@@ -103,6 +103,7 @@ if (!read(KEY.name)) {
 	initChatUI();
 	initAwayUI();
 	initPeopleUI();
+	initRailToggle();   // マップの幅が変わるので、下の fit() より前に済ませる
 	initAlarm();
 
 	// 初回描画とループ開始

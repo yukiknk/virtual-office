@@ -40,6 +40,9 @@
 
 		<!-- 左のメニューバー。中身が空の div は scene.js が後から埋める枠。 -->
 		<aside id="rail">
+			<!-- メニューを細い帯に畳む／元に戻す（panel.js の initRailToggle）。
+			     畳んでもマイク・画面共有・離席は押せるように、アイコンだけを残す。 -->
+			<button type="button" id="rail-toggle" title="メニューを畳む" aria-label="メニューを畳む">«</button>
 			<h2 class="rail-h" data-config="orgName">デモオフィス</h2>
 			<div id="roster"></div>   <!-- 在室者の一覧 -->
 
@@ -60,14 +63,21 @@
 			<!-- 状態を変えないボタン2つを横に並べる。よく使う「看板を作成」に手が届きやすいよう、チャットの下に置く。
 			     離席・退出とは役割が違うので別の行にしてある
 			     （退出の隣に置くと、押し間違えたときに接続が切れる）。 -->
+			<!-- 畳んでいるあいだだけ出る。押すとメニューを開いてチャットの入力欄へ移る。
+			     畳んでいる間に届いたメッセージの数を .badge に出す。 -->
+			<button type="button" id="chat-open-btn" title="チャットを開く">
+				<span class="bi">💬</span><span class="badge" hidden></span>
+			</button>
+
+			<!-- bi は畳んだときに出す絵、bl は開いているときに出す文字。どちらか一方だけが見える。 -->
 			<div id="rail-tools">
-				<button type="button" id="people-btn">勤務者一覧</button>
-				<button type="button" id="comment-add-btn">看板を作成</button>
+				<button type="button" id="people-btn" title="勤務者一覧"><span class="bi">👥</span><span class="bl">勤務者一覧</span></button>
+				<button type="button" id="comment-add-btn" title="看板を作成"><span class="bi">📝</span><span class="bl">看板を作成</span></button>
 			</div>
 			<div id="usage"></div>   <!-- 今月の転送量 -->
 			<div id="actions">
-				<button type="button" id="away-btn" class="actbtn">離席</button>
-				<button type="button" id="leave-btn" class="actbtn danger">退出</button>
+				<button type="button" id="away-btn" class="actbtn" title="離席"><span class="bi">☕</span><span class="bl">離席</span></button>
+				<button type="button" id="leave-btn" class="actbtn danger" title="退出"><span class="bi">🚪</span><span class="bl">退出</span></button>
 			</div>
 
 			<!-- ここ2つだけ voice.js の担当。

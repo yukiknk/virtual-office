@@ -1365,3 +1365,124 @@ body {
 		padding: 4px;
 	}
 }
+
+/* ── 左メニューを畳む（オフィス） ──
+   開いているときは絵（.bi）を隠し、畳んだときは文字（.bl）を隠す。
+   畳んだ状態は #admin に .rail-collapsed が付く（panel.js の initRailToggle）。 */
+#rail {
+	position: relative;
+}
+
+.bi,
+#rail #chat-open-btn {
+	display: none;
+}
+
+/* 畳む／開くボタン。開いているときは組織名の右に小さく置く */
+#rail #rail-toggle {
+	position: absolute;
+	top: 10px;
+	right: 10px;
+	width: 26px;
+	height: 26px;
+	margin: 0;
+	padding: 0;
+	border-radius: 7px;
+	font-size: 14px;
+	line-height: 1;
+	z-index: 1;
+}
+
+/* 組織名がボタンの下に潜らないようにする */
+#rail:has(#rail-toggle) h2 {
+	padding-right: 32px;
+}
+
+#admin.rail-collapsed {
+	grid-template-columns: 56px 1fr;
+}
+
+.rail-collapsed #rail {
+	padding: 8px 6px;
+	gap: 6px;
+}
+
+/* 畳んだときに隠すもの：一覧・チャット・通信量・スピーカーの確認 */
+.rail-collapsed #rail h2,
+.rail-collapsed #roster,
+.rail-collapsed .rail-sub,
+.rail-collapsed #chat-log,
+.rail-collapsed #chat-form,
+.rail-collapsed #usage,
+.rail-collapsed #dock .dock-mini,
+.rail-collapsed .bl,
+.rail-collapsed #dock .toolbtn .lb {
+	display: none;
+}
+
+.rail-collapsed .bi {
+	display: inline;
+}
+
+/* ボタンは縦1列に並べ、絵だけの正方形に近い形にする */
+.rail-collapsed #rail-tools,
+.rail-collapsed #actions,
+.rail-collapsed #dock .dock-row {
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 0;
+}
+
+.rail-collapsed #rail #rail-toggle,
+.rail-collapsed #rail #chat-open-btn,
+.rail-collapsed #rail #rail-tools button,
+.rail-collapsed #actions .actbtn,
+.rail-collapsed #dock .toolbtn {
+	position: relative;
+	top: auto;
+	right: auto;
+	display: block;
+	flex: none;
+	width: 100%;
+	height: 40px;
+	margin: 0;
+	padding: 0;
+	border-radius: 10px;
+	font-size: 18px;
+	line-height: 1;
+}
+
+/* 退出は離席のすぐ下に来るので、押し間違えないよう間を空ける */
+.rail-collapsed #actions #leave-btn {
+	margin-top: 12px;
+}
+
+.rail-collapsed #rail #rail-toggle {
+	height: 30px;
+	font-size: 15px;
+}
+
+.rail-collapsed #dock .toolbtn .ic {
+	font-size: 18px;
+}
+
+/* 畳んでいる間に届いたチャットの数 */
+#chat-open-btn .badge {
+	position: absolute;
+	top: 2px;
+	right: 2px;
+	min-width: 16px;
+	height: 16px;
+	padding: 0 4px;
+	border-radius: 999px;
+	background: #b23a2a;
+	color: #fff;
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 16px;
+	text-align: center;
+}
+
+#chat-open-btn .badge[hidden] {
+	display: none;
+}

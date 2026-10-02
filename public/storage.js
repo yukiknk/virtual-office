@@ -12,6 +12,7 @@ export const KEY = {
 	speakerId: "office.speakerId",  // スピーカーの deviceId
 	avatar: "office.avatar",        // アバターの選択（JSON）
 	pos: "office.pos",              // 退出時の位置（JSON {x,y}）
+	rail: "office.rail",            // 左メニューを畳んでいるか（"1" = 畳む / "0" = 開く）
 };
 
 // 空文字は「未設定」とみなして fallback を返す
