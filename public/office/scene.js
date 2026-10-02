@@ -139,6 +139,34 @@ function drawComments() {
 		if ((hover && pointInRect(hover, c)) || c === dragComment) { drawDeleteBtn(c); drawHandles(c); }
 	}
 	for (const a of lastActors) if (underSign(a)) drawActorLabels(a);
+	drawLocate();   // 場所の目印は看板より上（看板の下にいる人でも見つけられるように）
+}
+
+// 勤務者一覧で選んだ人の場所を示す。広がって消える輪を2つ、時間をずらして繰り返す。
+// 時間が切れたとき・相手が退出したときは何も描かず、目印を片づける。
+function drawLocate() {
+	const loc = store.locate;
+	if (!loc) return;
+	const a = lastActors.find((x) => x.id === loc.id);
+	if (!a || Date.now() > loc.until) { store.locate = null; return; }
+	const c = w2s(a.x, a.y - DRAW_H / 2 + 6);   // アバターの中心あたり
+	ctx.save();
+	ctx.strokeStyle = "#e0a83f";
+	for (const shift of [0, 0.5]) {
+		const t = ((Date.now() / 1200) + shift) % 1;   // 0→1 を1.2秒で繰り返す
+		ctx.globalAlpha = 1 - t;
+		ctx.lineWidth = 4;
+		ctx.beginPath();
+		ctx.arc(c.x, c.y, 26 + t * 46, 0, Math.PI * 2);
+		ctx.stroke();
+	}
+	// 輪が広がりきった瞬間にも位置が分かるよう、内側に細い輪を残す
+	ctx.globalAlpha = 0.9;
+	ctx.lineWidth = 2.5;
+	ctx.beginPath();
+	ctx.arc(c.x, c.y, 26, 0, Math.PI * 2);
+	ctx.stroke();
+	ctx.restore();
 }
 
 // 人ひとりが画面上で占める範囲（アバター＋名前＋離席ラベルをおおまかに囲む。ワールド座標）
@@ -244,7 +272,7 @@ function drawWallsAndActors() {
 	// 2) アバターを集める（自分＋補間後の他人）。南（下）の人ほど後に描く。
 	const actors = [];
 	const renderTime = Date.now() - LERP_DELAY;
-	for (const o of store.others.values()) {
+	for (const [id, o] of store.others) {
 		const p = renderPos(o.buf, renderTime);
 		if (!p) continue;
 		// 直近の位置変化から向き・歩行を推定
@@ -254,7 +282,7 @@ function drawWallsAndActors() {
 			const dx = b[b.length - 1].x - b[b.length - 2].x, dy = b[b.length - 1].y - b[b.length - 2].y;
 			if (Math.hypot(dx, dy) > 1) { moving = true; o.dir = faceDir(dx, dy); }
 		}
-		actors.push({ x: p.x, y: p.y, name: o.name, color: "#b23a2a", away: o.away, awayMsg: o.awayMsg, talk: o.talk, dir: o.dir || "down", moving, avatar: o.avatar || DEFAULT_AVATAR });
+		actors.push({ id, x: p.x, y: p.y, name: o.name, color: "#b23a2a", away: o.away, awayMsg: o.awayMsg, talk: o.talk, dir: o.dir || "down", moving, avatar: o.avatar || DEFAULT_AVATAR });
 	}
 	actors.push({ x: store.me.x, y: store.me.y, name: store.me.name, color: "#1f3fb0", away: store.me.away, awayMsg: store.me.awayMsg, talk: store.me.talking, dir: store.me.dir, moving: store.me.moving, avatar: store.me.avatar });
 	actors.sort((a, b) => a.y - b.y);   // 南（下）にいる人ほど後に描く＝手前になる

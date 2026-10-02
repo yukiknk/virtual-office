@@ -247,32 +247,44 @@ export function updateRoster() {
 	const el = document.getElementById("roster");
 	if (!el) return;
 
-	const myZone = zoneIdAt(store.me.x, store.me.y);
+	// 自分が今いるグループだけを表示する
+	const g = myGroup();
+	const members = [{ name: store.me.name, self: true }, ...g.names.map((name) => ({ name, self: false }))];
+	el.innerHTML = renderGroup(g.zone ? g.zone.name : "近くの人", members, !g.zone);
+}
 
-	// 他人を最新位置つきで集める
-	const others = [];
+// いま自分と同じ範囲にいる人（自分を除く）。声とチャットが届く相手。
+//
+// 会話エリアの中にいれば同じエリアの人、外にいれば半径 NEAR 以内でエリア外の人。
+// サーバーがチャットを配る条件（src/room.js の relayChat）と同じ式で、離席中の人も含む。
+// 戻り値の zone は自分がいる会話エリア（外にいれば null）。
+function myGroup() {
+	const myZone = zoneIdAt(store.me.x, store.me.y);
+	const names = [];
 	for (const o of store.others.values()) {
 		const p = o.buf[o.buf.length - 1];
 		if (!p) continue;
-		others.push({ name: o.name, x: p.x, y: p.y });
+		const oz = zoneIdAt(p.x, p.y);
+		if (myZone ? oz === myZone : (oz === null && Math.hypot(p.x - store.me.x, p.y - store.me.y) <= NEAR)) names.push(o.name);
 	}
+	const zone = myZone ? (store.zones.find((z) => z.id === myZone) || { name: "会話エリア" }) : null;
+	return { zone, names };
+}
 
-	// 自分が今いるグループだけを表示する
-	const members = [{ name: store.me.name, self: true }];
-	let title;
-	if (myZone) {
-		const z = store.zones.find((z) => z.id === myZone);
-		title = z ? z.name : "会話エリア";
-		for (const p of others) if (zoneIdAt(p.x, p.y) === myZone) members.push({ name: p.name, self: false });
-		el.innerHTML = renderGroup(title, members, false);
-	} else {
-		title = "近くの人";
-		for (const p of others) {
-			if (zoneIdAt(p.x, p.y) !== null) continue;   // エリア内の人は対象外
-			if (Math.hypot(p.x - store.me.x, p.y - store.me.y) <= NEAR) members.push({ name: p.name, self: false });
-		}
-		el.innerHTML = renderGroup(title, members, true);
-	}
+// いまチャットを送ると誰に届くかを、入力欄のプレースホルダに出す。
+// チャットは全員には届かない。会話エリアの中ならそのエリアの人、外なら近くの人だけ。
+// それが分からないと、遠くの人に送ったつもりで返事を待ち続けることになる。
+let chatPlaceholder = "";
+export function updateChatPlaceholder() {
+	const input = document.getElementById("chat-input");
+	if (!input) return;
+	const zone = myGroup().zone;
+	const text = zone ? `${zone.name}にいる人へのメッセージ` : "近くの人へのメッセージ";
+	if (text === chatPlaceholder) return;
+	chatPlaceholder = text;
+	input.placeholder = text;
+	// 長いエリア名だとプレースホルダが折り返すので、高さを合わせ直す（initChatUI が聞いている）
+	input.dispatchEvent(new Event("input"));
 }
 
 // ── チャット（左メニュー） ──
@@ -280,15 +292,43 @@ export function initChatUI() {
 	const form = document.getElementById("chat-form");
 	if (!form) return;
 	const input = document.getElementById("chat-input");
+	// 入力欄の高さを内容に合わせる（上限は style.css の max-height。超えたら中でスクロール）。
+	// 一度 auto に戻すのは、文字を消したときに縮めるため。
+	const autosize = (e) => {
+		// 空のときはプレースホルダの長さに合わせる。scrollHeight はプレースホルダを
+		// 数えないので、測るあいだだけ中身として入れる（会話エリア名が長いと折り返すため）。
+		// 変換中は触らない（中身を書き換えると日本語入力の変換が壊れる）。
+		const empty = !input.value && !(e && e.isComposing);
+		if (empty) input.value = input.placeholder;
+		input.style.height = "auto";
+		input.style.height = input.scrollHeight + 2 + "px";   // +2 は上下の枠線ぶん
+		if (empty) input.value = "";
+	};
 	const submit = () => {
 		const text = input.value.trim();
 		if (!text) return;
 		sendChat(text);
 		input.value = "";
+		autosize();
 	};
+	if (input) { input.addEventListener("input", autosize); autosize(); }
+
+	// 「一番下を見ているか」は、利用者がスクロールしたときにだけ更新する。
+	// 描き直すたびに位置から測る方式だと、入力欄が伸びる・在室者が増えるなどで
+	// チャット欄の高さが変わっただけで「一番下ではない」と判定され、追従が止まる。
+	const log = document.getElementById("chat-log");
+	if (log) {
+		log.addEventListener("scroll", () => { chatStick = atBottom(log); });
+		// 高さが変わったとき、一番下を見ていたなら下へ送り直す（最新のメッセージを隠さない）
+		if (window.ResizeObserver) new ResizeObserver(() => { if (chatStick) log.scrollTop = log.scrollHeight; }).observe(log);
+	}
 	form.addEventListener("submit", (e) => { e.preventDefault(); submit(); });
 	// Enterで送信、Shift+Enterで改行
 	if (input) input.addEventListener("keydown", (e) => {
+		// 日本語入力の変換を確定する Enter では送らない。
+		// isComposing だけでは足りない。Mac の Safari は確定の Enter を「変換が終わったあと」の
+		// キーとして届けるため isComposing が false になる。そのとき keyCode は 229 なので併せて見る。
+		if (e.isComposing || e.keyCode === 229) return;
 		if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
 	});
 }
@@ -302,7 +342,19 @@ export function initPeopleUI() {
 	if (btn) btn.addEventListener("click", () => { renderPeople(); if (modal) modal.classList.add("open"); });
 	if (close) close.addEventListener("click", () => { if (modal) modal.classList.remove("open"); });
 	if (modal) modal.addEventListener("click", (e) => { if (e.target.id === "people-modal") modal.classList.remove("open"); });
+
+	// 人の行を押すと、一覧を閉じてマップ上でその人の場所を数秒示す（描くのは scene.js）。
+	// 行は描き直しで入れ替わるので、1つずつではなく一覧の側でまとめて受ける。
+	const list = document.getElementById("people-list");
+	if (list) list.addEventListener("click", (e) => {
+		const row = e.target.closest ? e.target.closest(".person-row.other") : null;
+		if (!row || !store.others.has(row.dataset.id)) return;
+		store.locate = { id: row.dataset.id, until: Date.now() + LOCATE_MS };
+		if (modal) modal.classList.remove("open");
+	});
 }
+
+const LOCATE_MS = 6000;   // 場所を示し続ける時間
 // 一覧を開いている間だけ、最新の接続者に更新する
 export function updatePeople() {
 	const modal = document.getElementById("people-modal");
@@ -311,14 +363,29 @@ export function updatePeople() {
 function renderPeople() {
 	const el = document.getElementById("people-list");
 	if (!el) return;
-	const people = [{ name: store.me.name, self: true, away: store.me.away }];
-	for (const o of store.others.values()) people.push({ name: o.name, self: false, away: o.away });
-	let html = `<div class="people-count">${people.length}人が接続中</div>`;
-	for (const p of people) {
-		html += `<div class="person-row${p.self ? " self" : ""}"><span class="dot"></span><span class="nm">${esc(p.name)}</span>${p.self ? "（自分）" : ""}${p.away ? '<span class="away-tag">離席中</span>' : ""}</div>`;
+	// いる場所。会話エリアの中ならその名前、外なら空（何も出さない）
+	const whereOf = (x, y) => {
+		const id = zoneIdAt(x, y);
+		const z = id ? store.zones.find((z) => z.id === id) : null;
+		return z ? z.name : "";
+	};
+	const people = [{ name: store.me.name, self: true, away: store.me.away, awayMsg: store.me.awayMsg, where: whereOf(store.me.x, store.me.y) }];
+	for (const [id, o] of store.others) {
+		const p = o.buf[o.buf.length - 1];
+		people.push({ id, name: o.name, self: false, away: o.away, awayMsg: o.awayMsg, where: p ? whereOf(p.x, p.y) : "" });
 	}
+	let html = `<div class="people-count"><span>${people.length}人が接続中</span><span>名前を押すと場所を表示</span></div>`;
+	for (const p of people) {
+		html += `<div class="person-row${p.self ? " self" : " other"}"${p.self ? "" : ` data-id="${esc(p.id)}"`}><span class="dot"></span><span class="nm">${esc(p.name)}</span>${p.self ? "（自分）" : ""}`
+			+ `<span class="where">${esc(p.where)}</span>${p.away ? `<span class="away-tag">離席中${p.awayMsg ? "：" + esc(p.awayMsg) : ""}</span>` : ""}</div>`;
+	}
+	// 変わったときだけ書き換える。500msごとに作り直すと、押している最中に行が
+	// 入れ替わってクリックを取りこぼす。
+	if (html === peopleHtml) return;
+	peopleHtml = html;
 	el.innerHTML = html;
 }
+let peopleHtml = "";
 
 // ── 退出・離席 ──
 export function initAwayUI() {
@@ -389,14 +456,32 @@ export function updateChat() {
 	if (!el || store.chatSeq === lastChatSeq) return;   // 変化がなければ何もしない
 	lastChatSeq = store.chatSeq;
 	let html = "";
-	for (const m of store.messages) {   // 新着が先頭＝上から新しい順
-		if (m.kind === "call") {        // 呼び出しの記録は発言者名を出さず、見た目を分ける
+	for (const m of store.messages) {   // 古い順＝上から古い順、新着が一番下
+		if (m.kind === "call") {        // 呼び出しの記録は発言者名を出さず、見た目を分ける（時刻は本文に入っている）
 			html += `<div class="chat-msg call">${esc(m.text)}</div>`;
 			continue;
 		}
-		html += `<div class="chat-msg${m.self ? " self" : ""}"><span class="chat-name">${esc(m.name)}</span>${esc(m.text)}</div>`;
+		html += `<div class="chat-msg${m.self ? " self" : ""}"><span class="chat-name"><span>${esc(m.name)}</span><span class="chat-time">${hhmm(m.at)}</span></span>${esc(m.text)}</div>`;
 	}
+	// 一番下を見ているときだけ新着に追従する。さかのぼって読んでいる最中に
+	// 下へ引き戻されないようにするため。自分が送ったときは、どこを見ていても下へ送る。
+	const last = store.messages[store.messages.length - 1];
+	if (last && last.self) chatStick = true;
 	el.innerHTML = html;
+	if (chatStick) el.scrollTop = el.scrollHeight;
+}
+
+// チャット欄の一番下を見ているか（initChatUI のスクロール監視が更新する）。最初は一番下。
+let chatStick = true;
+
+// スクロール位置がほぼ一番下か。ぴったりでなくても、1行ぶん程度のずれは一番下とみなす。
+function atBottom(el) {
+	return el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+}
+
+function hhmm(at) {
+	const d = new Date(Number.isFinite(+at) ? +at : Date.now());
+	return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 // 在室者リストの1グループ分の HTML。isFree は「会話エリアではなく近くの人」の意味で、

@@ -48,8 +48,9 @@ export const store = {
 	comments: [],
 	officeComments: [],
 
-	messages: [],         // チャット（新着が先頭・保存しない。退出で消える）
+	messages: [],         // チャット（古い順・新着が末尾。保存しない。退出で消える）
 	chatSeq: 0,           // 受信のたびに増やして再描画の判定に使う
+	locate: null,         // マップ上で場所を示している相手 { id, until }。勤務者一覧で人を押すと入る
 	callAlert: null,      // 呼び出しを受けたときの画面バナー { name, at }。数秒で消す
 
 	// ── 自分（位置はワールド座標） ──

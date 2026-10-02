@@ -13,7 +13,7 @@ import { initMove, update } from "./move.js";
 import { fit, draw, initPointer, sweepExpiredComments } from "./scene.js";
 import {
 	initCommentUI, initLinkPrompt, initChatUI, initAwayUI, initPeopleUI,
-	updateRoster, updatePeople, updateLinkPrompt, updateChat, updateUsage,
+	updateRoster, updatePeople, updateLinkPrompt, updateChat, updateChatPlaceholder, updateUsage,
 	updateCallPrompt, updateCallAlert,
 } from "./panel.js";
 import { initAlarm } from "./alarm.js";
@@ -42,7 +42,7 @@ function loop(t) {
 	update(dt);
 	sendPos();
 	if (t - lastVoice > 400) { lastVoice = t; updateVoice(); }
-	if (t - lastRoster > 500) { lastRoster = t; updateRoster(); updatePeople(); }
+	if (t - lastRoster > 500) { lastRoster = t; updateRoster(); updatePeople(); updateChatPlaceholder(); }
 	updateLinkPrompt();
 	updateCallPrompt();
 	updateCallAlert();
@@ -62,6 +62,7 @@ setInterval(() => {
 	sendPos();
 	updateVoice();
 	updateRoster();
+	updateChatPlaceholder();
 	savePos();
 	sweepExpiredComments();   // 消える日時を過ぎた看板を撤去
 }, 1000);
