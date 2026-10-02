@@ -130,11 +130,13 @@ function onCallSent(msg) {
 
 // ── チャット欄 ──
 
-// 1件積む。新着が先頭、50件を超えたら古いものから落とす。
-// chatSeq を増やすのが scene.js への「変わった」の合図。
+// 1件積む。古い順に並べ、新着は末尾。50件を超えたら古いものから落とす。
+// at は受け取った時刻（この端末の時計）。チャット欄に時刻を出すのに使う。
+// chatSeq を増やすのが panel.js への「変わった」の合図。
 function pushMessage(m) {
-	store.messages.unshift(m);
-	if (store.messages.length > 50) store.messages.length = 50;
+	m.at = Date.now();
+	store.messages.push(m);
+	if (store.messages.length > 50) store.messages.splice(0, store.messages.length - 50);
 	store.chatSeq++;
 }
 

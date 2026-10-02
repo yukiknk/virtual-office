@@ -46,10 +46,27 @@ body {
 }
 
 #roster {
+	/* 高さが足りないときに縮むのはチャット欄のほう。ここが縮むと名前が切れる */
+	flex: none;
 	max-height: 26%;
 	/* 在室者は控えめに。残りの高さはチャットへ */
 	overflow-y: auto;
 	margin-bottom: 12px;
+}
+
+/* 勤務者一覧と看板を作成を横に並べる行 */
+#rail-tools {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+#rail #rail-tools button {
+	flex: 1;
+	width: auto;
+	margin: 0;
+	padding: 9px 4px;
+	white-space: nowrap;
 }
 
 /* サブ見出し（チャットなど） */
@@ -60,10 +77,11 @@ body {
 	margin: 0 0 8px;
 }
 
-/* チャットの表示欄（新着が上） */
+/* チャットの表示欄（古い順。新着は下に足され、自動で一番下まで送られる） */
 #chat-log {
 	flex: 1 1 auto;
-	min-height: 60px;
+	/* 2〜3件は読める高さを確保する。これより縮むくらいなら、メニュー全体をスクロールさせる */
+	min-height: 96px;
 	overflow-y: auto;
 	display: flex;
 	flex-direction: column;
@@ -78,6 +96,8 @@ body {
 	border-radius: 8px;
 	padding: 6px 8px;
 	word-break: break-word;
+	/* 改行をそのまま出す（Shift+Enter で入れた改行） */
+	white-space: pre-wrap;
 }
 
 .chat-msg.self {
@@ -85,50 +105,70 @@ body {
 }
 
 .chat-name {
-	display: block;
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 8px;
 	font-size: 11px;
 	font-weight: 700;
 	color: #737a70;
 	margin-bottom: 2px;
+	white-space: normal;
 }
 
 .chat-msg.self .chat-name {
 	color: #1f3fb0;
 }
 
-/* チャット入力（入力欄は全幅、送信は下段） */
+/* 送信時刻（名前の右端） */
+.chat-time {
+	flex: none;
+	font-weight: 500;
+	color: #8b9287;
+	font-variant-numeric: tabular-nums;
+}
+
+/* チャット入力。送信ボタンを入力欄の右下に重ねる */
 #chat-form {
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
+	position: relative;
 	margin-bottom: 12px;
 }
 
 #chat-input {
+	display: block;
 	width: 100%;
 	box-sizing: border-box;
-	padding: 9px 10px;
+	/* 右はボタンのぶんを空ける */
+	padding: 9px 44px 9px 10px;
 	border: 1px solid #b4bbb0;
 	border-radius: 8px;
 	font: inherit;
 	font-size: 13px;
 	line-height: 1.4;
-	height: 56px;
-	/* 長い文章は縦スクロール */
+	/* 高さは panel.js が内容に合わせて変える。ここは下限と上限 */
+	min-height: 40px;
 	max-height: 120px;
 	overflow-y: auto;
-	resize: vertical;
+	/* つまみが送信ボタンと重なるので、手動のリサイズは切る */
+	resize: none;
 }
 
-#chat-form button {
-	width: 100%;
+/* #rail button の指定（全幅・灰色）より強くするため、#rail を付けている */
+#rail #chat-send {
+	position: absolute;
+	right: 6px;
+	bottom: 6px;
+	width: 28px;
+	height: 28px;
 	margin: 0;
-	padding: 9px 12px;
+	padding: 0;
 	border: none;
-	border-radius: 8px;
+	border-radius: 50%;
 	background: #1f3fb0;
 	color: #fff;
-	font-weight: 700;
+	font-size: 13px;
+	line-height: 28px;
+	text-align: center;
 	cursor: pointer;
 }
 
@@ -505,6 +545,8 @@ body {
 }
 
 .people-count {
+	display: flex;
+	justify-content: space-between;
 	font-size: 12px;
 	color: #737a70;
 	margin-bottom: 6px;
@@ -533,8 +575,35 @@ body {
 	flex: none;
 }
 
-.person-row .away-tag {
+/* ほかの人の行は押せる（押すとマップ上で場所を示す） */
+.person-row.other {
+	cursor: pointer;
+}
+
+.person-row.other:hover {
+	background: #eff1ec;
+}
+
+/* いる場所（会話エリアの名前）。右端に寄せる */
+.person-row .where {
 	margin-left: auto;
+	font-size: 11px;
+	color: #737a70;
+	white-space: nowrap;
+}
+
+/* 名前は縮めない。理由が長いときに縮むのは理由のほう */
+.person-row .nm {
+	flex: none;
+}
+
+/* 離席の印と理由。理由は最長100文字あるので、収まらないぶんは「…」で切る */
+.person-row .away-tag {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	margin-left: 8px;
 	font-size: 11px;
 	font-weight: 700;
 	color: #b23a2a;
@@ -1067,4 +1136,69 @@ body {
 	color: #8d2e21;
 	font-size: 12px;
 	font-weight: 700;
+}
+
+/* ── 画面の縦が短いとき（オフィスの左メニュー） ──
+   ノート PC でブラウザを小さくしていると、メニューの部品だけで高さを使い切り、
+   チャット欄がほとんど残らない。余白を詰めて、チャット欄に高さを回す。
+   変えるのは余白（padding / margin）だけ。部品の並びや表示・非表示は変えない。
+   セレクタはオフィスにしか無い id に限っている（#rail は管理者ページと共用のため）。 */
+@media (max-height: 780px) {
+	#rail:has(#dock) {
+		padding: 10px 12px;
+	}
+
+	#rail:has(#dock) h2 {
+		margin-bottom: 8px;
+		padding-bottom: 6px;
+	}
+
+	#roster {
+		margin-bottom: 8px;
+	}
+
+	.rgroup {
+		margin-bottom: 6px;
+	}
+
+	.rperson {
+		padding: 2px 6px;
+	}
+
+	.rperson.self {
+		padding: 4px 8px;
+	}
+
+	#rail:has(#dock) .rail-sub {
+		margin-bottom: 4px;
+	}
+
+	#rail #rail-tools button {
+		padding: 6px 4px;
+	}
+
+	#chat-form {
+		margin-bottom: 8px;
+	}
+
+	#usage {
+		margin-bottom: 6px;
+	}
+
+	#actions {
+		margin-bottom: 8px;
+	}
+
+	#actions .actbtn {
+		padding: 6px 10px;
+	}
+
+	#dock .toolbtn {
+		padding: 7px 8px;
+		gap: 3px;
+	}
+
+	#dock .dock-mini {
+		padding: 4px;
+	}
 }
