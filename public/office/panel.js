@@ -13,6 +13,7 @@ import { GRID, WORLD } from "../map.js";
 import { store, zoneIdAt } from "./store.js";
 import { sendComment, sendChat, sendAway, sendCall } from "./net.js";
 import { stopMoving } from "./move.js";
+import { updateVoice } from "./voice.js";
 
 // エリア外にいる人どうしが会話できる範囲。voice.js が音声をつなぐ距離と、
 // サーバーがチャットを配る距離と、同じ値を別々に持っている。変えるときは3か所。
@@ -334,6 +335,7 @@ export function initAwayUI() {
 			store.me.away = true;
 			setAwayBtn(true);
 			sendAway(true, store.me.awayMsg || "");
+			updateVoice();   // マイクと画面共有をすぐ止め、ボタンの表示も合わせる（次の周期を待たない）
 			if (text) text.value = store.me.awayMsg || "";
 			if (modal) modal.classList.add("open");
 			if (text) text.focus();
@@ -343,6 +345,7 @@ export function initAwayUI() {
 			store.me.awayMsg = "";
 			setAwayBtn(false);
 			sendAway(false, "");
+			updateVoice();
 			if (modal) modal.classList.remove("open");
 		}
 	});

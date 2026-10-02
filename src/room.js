@@ -11,19 +11,20 @@
 // どこに何が乗っているかは次のとおり。
 //
 //   serializeAttachment（接続ごと・残る）
-//     id / name / token / avatar / away / SFUの各ID
+//     id / name / token / avatar / away / SFUの各ID / 位置（x, y）と最後に届いた時刻（at）
+//     位置をここに置くのは、休眠や作り直しを越えて残すためと、接続が閉じれば
+//     一緒に消えるため（別の場所に保存すると、退出した人の位置が残る恐れがある）
 //     ※ 上限 16,384 バイト。大きいものは storage へ
 //   ctx.storage（部屋ごと・残る）
 //     officeComments / budget ※ どちらも遅延読み込み
-//   this.positions（消える）
-//     全員の座標。位置は止まっていても2秒ごとに届く（public/office/net.js の
-//     sendPos）ので、消えても次の pos で戻る。戻るまでのあいだ {x:0, y:0} 扱いになる
 //   this.callAt（消える）
 //     呼び出しの連打防止。休眠を挟むとクールダウンが実質リセットされる
+//   this.leaving（消える）
+//     退出通知の待ち。タイマーが残っているあいだ部屋は眠らないので、通常は消えない
 //   this.scheduled / this.budget*（消えるが問題ない）
 //     前者は作り直され、後者は ensureBudgetLoaded が storage から読み直す
 
-import { GB, LIMIT_GB, NEAR, CALL_COOLDOWN_MS } from "./config.js";
+import { GB, LIMIT_GB, NEAR, CALL_COOLDOWN_MS, LEAVE_GRACE_MS, STALE_MS } from "./config.js";
 import { json, cleanAvatar, cleanComment, monthKey, levelFor, zoneIdAtWorld, bytesPerSec, readWebhookUrl, escapeSlack } from "./helpers.js";
 
 export class Room {
@@ -31,7 +32,6 @@ export class Room {
     this.ctx = ctx;
     this.env = env;
     // 以下はすべてメモリ上の値。休眠で消えることを前提に扱う（冒頭の説明を参照）。
-    this.positions = new Map();   // id -> {x,y}。消えても次の pos で戻る
     this.scheduled = false;
     this.budgetBytes = 0;
     this.budgetMonth = monthKey();
@@ -39,6 +39,7 @@ export class Room {
     this.budgetLoaded = false;
     this.comments = null;         // オフィスで作られたコメント（全員共有）。遅延読み込み
     this.callAt = new Map();      // 呼び出しの連打防止。"送信者id>相手id" -> 最後に送った時刻
+    this.leaving = new Map();     // 退出通知の待ち。cid -> タイマー
   }
 
   async fetch(req) {
@@ -102,14 +103,17 @@ export class Room {
   async relayChat(att, text) {
     let zones = [];
     try { zones = JSON.parse((await this.env.LAYOUT_KV.get("zones")) || "[]"); } catch { }
-    const sp = this.positions.get(att.id) || { x: 0, y: 0 };
-    const sz = zoneIdAtWorld(zones, sp.x, sp.y);
+    // 位置がまだ届いていない人（接続直後・休眠明け）は、近いかどうか判定できないので
+    // 配信の対象にしない。{0,0} 扱いにすると、左上にいる人どうしとして届いてしまう。
+    const sp = posOf(att);
+    const sz = sp ? zoneIdAtWorld(zones, sp.x, sp.y) : null;
     const out = JSON.stringify({ t: "chat", id: att.id, name: att.name, text });
     for (const ws of this.ctx.getWebSockets()) {
       const a2 = ws.deserializeAttachment();
       if (!a2 || !a2.name) continue;
       if (a2.id === att.id) { try { ws.send(out); } catch { } continue; }   // 送信者にも表示
-      const p2 = this.positions.get(a2.id) || { x: 0, y: 0 };
+      const p2 = posOf(a2);
+      if (!sp || !p2) continue;
       const z2 = zoneIdAtWorld(zones, p2.x, p2.y);
       const ok = sz ? (z2 === sz) : (z2 === null && Math.hypot(p2.x - sp.x, p2.y - sp.y) <= NEAR);
       if (ok) { try { ws.send(out); } catch { } }
@@ -132,8 +136,8 @@ export class Room {
     if (!target || !target.att.name) return;
     if (target.att.away) return;                                   // 離席中は呼び出せない
 
-    const me = this.positions.get(att.id);
-    const you = this.positions.get(toId);
+    const me = posOf(att);
+    const you = posOf(target.att);
     if (!me || !you) return;
     if (Math.hypot(you.x - me.x, you.y - me.y) > NEAR) return;      // 近くにいないと呼べない
 
@@ -157,7 +161,7 @@ export class Room {
     const pair = new WebSocketPair();
     const client = pair[0], server = pair[1];
     // これが休眠を有効にする1行。server.accept() にすると休眠しなくなり、
-    // 代わりに this.positions などがメモリに残り続ける（＝常時課金される）。
+    // 代わりに this.callAt などがメモリに残り続ける（＝常時課金される）。
     this.ctx.acceptWebSocket(server);
 
     // 接続ごとの情報。休眠を越えて残る唯一の置き場所。
@@ -188,7 +192,7 @@ export class Room {
     else if (msg.t === "chat") await this.onChat(att, msg);
     else if (msg.t === "call") this.relayCall(ws, att, msg.to);
     else if (msg.t === "away") await this.onAway(ws, att, msg);
-    else if (msg.t === "pos") this.onPos(att, msg);
+    else if (msg.t === "pos") this.onPos(ws, att, msg);
     else if (msg.t === "publish") this.onPublish(ws, att, msg);
     else if (msg.t === "unpublish") this.onUnpublish(ws, att, msg);
   }
@@ -197,8 +201,19 @@ export class Room {
   // 現在の看板も併せて送る（以後は変更のたびに broadcastComments が配る）。
   async onHello(ws, att, msg) {
     await this.ensureBudgetLoaded();
+    att = ws.deserializeAttachment() || att;   // await のあいだに届いた変更を上書きしない
+    att.at = Date.now();       // 位置が届く前に「応答なし」と判定されないようにする
+    const first = !att.name;   // 同じ接続で hello を送り直しても入室通知は出さない
     att.name = String(msg.name || "名無し").slice(0, 20);
     att.avatar = cleanAvatar(msg.avatar);
+    // cid はタブごとの ID（public/office/net.js）。再接続しても変わらないので、
+    // 「同じ人がつなぎ直しただけ」を見分けるのに使う。送ってこない場合は接続の id で代用する。
+    att.cid = (typeof msg.cid === "string" && /^[\w-]{1,32}$/.test(msg.cid)) ? msg.cid : att.id;
+    // 離席状態もここで受け取る。再接続時に away で送り直させると、そのたびに通知が出る。
+    att.away = !!msg.away;
+    att.awayMsg = att.away ? String(msg.awayMsg || "").slice(0, 100) : "";
+    // つなぎ直しか：退出通知を待っている最中、または同じ cid の古い接続がまだ残っている
+    const rejoin = this.cancelLeave(att.cid) | this.hasCid(att.cid, att.id);
     ws.serializeAttachment(att);
     ws.send(JSON.stringify({
       t: "welcome", id: att.id, token: att.token,
@@ -207,7 +222,7 @@ export class Room {
     await this.ensureComments();
     ws.send(JSON.stringify({ t: "comments", list: this.comments }));   // 入室時に現在のコメントを送る
     this.schedule();
-    await this.notify(`${escapeSlack(att.name)}さんがスペースに入室しました。`);
+    if (first && !rejoin) await this.notify(`${escapeSlack(att.name)}さんがスペースに入室しました。`);
   }
 
   // 看板の追加・更新。同じ id が来たら置き換え（移動やリサイズもこの経路）。
@@ -252,9 +267,13 @@ export class Room {
     }
   }
 
-  // 位置。メモリにだけ持つ（休眠で消えるが、次の pos で戻る）。
-  onPos(att, msg) {
-    this.positions.set(att.id, { x: Number(msg.x) || 0, y: Number(msg.y) || 0 });
+  // 位置。接続（attachment）に保存するので、休眠や部屋の作り直しを越えて残る。
+  // at は最後に届いた時刻で、応答のない接続を見つけるのに使う（alarm の sweepStale）。
+  onPos(ws, att, msg) {
+    att.x = Number(msg.x) || 0;
+    att.y = Number(msg.y) || 0;
+    att.at = Date.now();
+    ws.serializeAttachment(att);
     this.schedule();
   }
 
@@ -282,12 +301,46 @@ export class Room {
   async webSocketError(ws) { await this.drop(ws); }
   async drop(ws) {
     const att = ws.deserializeAttachment();
-    if (att) this.positions.delete(att.id);
     this.schedule();
     // 名前が無い＝入室前に切れた接続なので通知しない
-    if (att && att.name) {
-      await this.notify(`${escapeSlack(att.name)}さんがスペースから退出しました。`);
+    if (att && att.name) this.scheduleLeave(att);
+  }
+
+  // ── 退出の通知（再接続なら出さない） ──
+  //
+  // 接続が切れた時点では、退出なのか一時的な切断なのか区別できない。
+  // LEAVE_GRACE_MS だけ待ち、同じ cid が戻ってこなければ退出として通知する。
+  // そのぶん、本当の退出の通知も同じ時間だけ遅れる。
+
+  // 同じ cid の（入室済みの）接続が、exceptId 以外にあるか
+  hasCid(cid, exceptId) {
+    for (const w of this.ctx.getWebSockets()) {
+      const a = w.deserializeAttachment();
+      if (a && a.name && a.cid === cid && a.id !== exceptId) return true;
     }
+    return false;
+  }
+
+  // 待っている退出通知を取り消す。取り消したものがあれば true。
+  cancelLeave(cid) {
+    const timer = this.leaving.get(cid);
+    if (timer === undefined) return false;
+    clearTimeout(timer);
+    this.leaving.delete(cid);
+    return true;
+  }
+
+  scheduleLeave(att) {
+    const cid = att.cid || att.id;
+    const id = att.id, name = att.name;   // 呼び出し元があとで att を書き換えても影響を受けないよう控える
+    if (this.hasCid(cid, id)) return;   // 新しい接続が先に張られている＝つなぎ直し
+    this.cancelLeave(cid);                  // close と error の両方が来ても通知は1回
+    const timer = setTimeout(async () => {
+      this.leaving.delete(cid);
+      if (this.hasCid(cid, id)) return;
+      await this.notify(`${escapeSlack(name)}さんがスペースから退出しました。`);
+    }, LEAVE_GRACE_MS);
+    this.leaving.set(cid, timer);
   }
 
   // 配信をまとめる。全員が15回/秒で位置を送ってくるので、届くたびに全員へ配信すると
@@ -305,7 +358,10 @@ export class Room {
     for (const ws of this.ctx.getWebSockets()) {
       const att = ws.deserializeAttachment();
       if (!att || !att.name) continue;
-      const p = this.positions.get(att.id) || { x: 0, y: 0 };
+      // 位置がまだ届いていない人は載せない（左上 {0,0} にいる扱いにしない）。
+      // クライアントは接続直後に位置を送るので、載らないのは一瞬だけ。
+      const p = posOf(att);
+      if (!p) continue;
       const user = { id: att.id, name: att.name, x: p.x, y: p.y };
       if (att.avatar) user.avatar = att.avatar;
       if (att.away) { user.away = true; if (att.awayMsg) user.awayMsg = att.awayMsg; }
@@ -357,6 +413,7 @@ export class Room {
   async alarm() {
     await this.ensureBudgetLoaded();
     const sockets = this.ctx.getWebSockets();
+    this.sweepStale(sockets);
 
     const nowMonth = monthKey();
     if (nowMonth !== this.budgetMonth) { this.budgetMonth = nowMonth; this.budgetBytes = 0; }
@@ -368,7 +425,8 @@ export class Room {
     for (const ws of sockets) {
       const att = ws.deserializeAttachment();
       if (!att || !att.name) continue;
-      const p = this.positions.get(att.id) || { x: 0, y: 0 };
+      const p = posOf(att);
+      if (!p) continue;   // 位置が分からない人は数えない
       users.push({ id: att.id, x: p.x, y: p.y, audio: !!att.audioTrack, screen: !!att.screenTrack });
     }
     this.budgetBytes += bytesPerSec(users, zones) * 60;   // 60秒ぶん積算
@@ -379,6 +437,30 @@ export class Room {
     for (const ws of sockets) { try { ws.send(out); } catch { } }
 
     if (sockets.length > 0) await this.ctx.storage.setAlarm(Date.now() + 60_000);
+  }
+
+  // 応答のない接続を退出扱いにする（alarm から60秒ごと）。
+  //
+  // PC のスリープや回線断では、切断の通知（webSocketClose）が来ないまま接続だけが
+  // 残ることがある。位置は接続に保存しているので、放っておくとアバターが残り続ける。
+  // 名前を空にすると「入室前の接続」と同じ扱いになり、配信・チャット・呼び出し・
+  // 転送量推定のすべてから外れる。close も送るので、相手が実は生きていれば
+  // 切断を検知して自動で入り直してくる。
+  sweepStale(sockets) {
+    const now = Date.now();
+    let changed = false;
+    for (const ws of sockets) {
+      const att = ws.deserializeAttachment();
+      if (!att || !att.name) continue;
+      if (now - (att.at || 0) < STALE_MS) continue;
+      this.scheduleLeave(att);   // Slack への退出通知（戻ってくれば取り消される）
+      att.name = "";
+      att.audioTrack = att.screenTrack = att.screenSessionId = undefined;
+      ws.serializeAttachment(att);
+      try { ws.close(4000, "stale"); } catch { }
+      changed = true;
+    }
+    if (changed) this.schedule();
   }
 
   // ── SFU 中継（App Secret は Worker/DO だけが持つ） ──
@@ -392,7 +474,8 @@ export class Room {
     const token = req.headers.get("x-office-token") || "";
     const owner = this.findByToken(token);
     if (!owner) return json({ error: "unauthorized" }, 403);
-    const { ws, att } = owner;
+    const { ws } = owner;
+    const sessions = owner.att.sessions || [];
 
     const parts = url.pathname.split("/").filter(Boolean);   // ["rtc","sessions",...]
 
@@ -405,6 +488,10 @@ export class Room {
         // attachment の上限 16,384 バイトに対して1件約40バイトなので、
         // 1回の接続で400回近く共有し直さないと問題にならない。
         // 上限を設けると、先頭（音声用）を誤って追い出したときに通話が壊れるため触っていない。
+        //
+        // SFU の応答を待つあいだに位置や離席が更新されているので、書き戻す前に読み直す。
+        // 待つ前に読んだ att をそのまま書くと、その間の変更を古い値で上書きしてしまう。
+        const att = ws.deserializeAttachment() || owner.att;
         att.sessions = att.sessions || [];
         if (!att.sessions.includes(sid)) att.sessions.push(sid);
         if (!att.sfuSessionId) att.sfuSessionId = sid;   // 最初のセッション＝音声・購読用
@@ -415,7 +502,7 @@ export class Room {
 
     if (parts[1] === "sessions" && parts[2]) {
       const sid = parts[2];
-      if (!(att.sessions || []).includes(sid)) return json({ error: "forbidden" }, 403);
+      if (!sessions.includes(sid)) return json({ error: "forbidden" }, 403);
 
       let bodyIn;
       try { bodyIn = await req.json(); } catch { bodyIn = undefined; }
@@ -459,4 +546,9 @@ export class Room {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   }
+}
+
+// 接続に保存された位置。まだ一度も届いていなければ null。
+function posOf(att) {
+  return (att && Number.isFinite(att.x) && Number.isFinite(att.y)) ? { x: att.x, y: att.y } : null;
 }

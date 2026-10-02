@@ -11,6 +11,8 @@ const heldKeys = new Set();
 export function initMove() {
 	window.addEventListener("keydown", (e) => {
 		if (isTyping(e.target)) return;   // 入力欄では移動キー（wasd等）を奪わない
+		// Ctrl+S や Ctrl+D などブラウザのショートカットは奪わない（アバターも動かさない）
+		if (e.ctrlKey || e.metaKey || e.altKey) return;
 		const k = e.key.toLowerCase();
 		if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) {
 			heldKeys.add(k);

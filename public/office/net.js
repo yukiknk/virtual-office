@@ -9,6 +9,14 @@ import { loadAll } from "./api.js";
 import { applyBudget, teardownSfu } from "./voice.js";
 import { playAlarm, showCallNotification } from "./alarm.js";
 
+// このタブを見分ける ID。再接続しても変わらない。
+// サーバーはこれを見て「同じ人がつなぎ直しただけ」を判別し、Slack へ
+// 退出・入室を流さないようにする（src/room.js の onHello / scheduleLeave）。
+const CID = (() => {
+	try { return crypto.randomUUID().replace(/-/g, "").slice(0, 16); }
+	catch { return "c" + Math.random().toString(36).slice(2, 12); }   // http のままの環境では randomUUID が使えない
+})();
+
 export function connect() {
 	// ローカル開発（http）と本番（https）の両方で動くようプロトコルを合わせる
 	const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -16,7 +24,14 @@ export function connect() {
 	store.ws = ws;
 
 	// 名前とアバターは接続のたびに送る。サーバーは切断でこれらを忘れるため。
-	ws.addEventListener("open", () => ws.send(JSON.stringify({ t: "hello", name: store.me.name, avatar: store.me.avatar })));
+	// 離席状態も一緒に送る。あとから away で送り直すと、再接続のたびに Slack へ「離席しました」が流れる。
+	ws.addEventListener("open", () => {
+		ws.send(JSON.stringify({ t: "hello", name: store.me.name, avatar: store.me.avatar, cid: CID, away: store.me.away, awayMsg: store.me.awayMsg }));
+		// 位置もすぐ送る。止まっている人は2秒に1回しか送らないので、待つと
+		// そのあいだサーバーが位置を知らず、他の人から見えない・声が届かない時間ができる。
+		lastSent = 0;
+		sendPos();
+	});
 	ws.addEventListener("message", onMessage);
 
 	// error は listen していない。WebSocket はエラーの後に必ず close が来るので close だけで足りる。

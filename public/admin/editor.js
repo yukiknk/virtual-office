@@ -3,7 +3,7 @@
 import { GRID, COLS, ROWS, WORLD, w2s, s2w, setViewport, drawBase, drawGrid, drawCommentBox } from "../map.js";
 import { store, CATEGORIES, FURNITURE } from "./store.js";
 import { saveLayout, saveZones, saveComments, saveFurniture } from "./data.js";
-import { updateSaveUI } from "./ui.js";
+import { updateSaveUI, trackSave } from "./ui.js";
 
 const stage = document.getElementById("stage");
 const canvas = document.getElementById("plan");
@@ -455,11 +455,13 @@ function resizeTo(p) {
 
 // 編集後：自動保存なら保存、手動保存なら「未保存」にする
 function afterEdit(kind) {
+	store.rev++;
 	if (store.autoSave) {
-		if (kind === "zone") saveZones();
-		else if (kind === "comment") saveComments();
-		else if (kind === "furniture") saveFurniture();
-		else saveLayout();
+		// 結果を見て、失敗したら「保存に失敗」を出す（見ないと保存済みに見えてしまう）
+		if (kind === "zone") trackSave(saveZones());
+		else if (kind === "comment") trackSave(saveComments());
+		else if (kind === "furniture") trackSave(saveFurniture());
+		else trackSave(saveLayout());
 	} else store.dirty = true;
 	updateSaveUI();
 }
