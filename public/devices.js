@@ -66,6 +66,46 @@ export function startLevelMeter(stream, onLevel) {
 	return () => { live = false; try { ac.close(); } catch { } };
 }
 
+// 話しているかどうかを検出し、変わったときだけ onTalk(true/false) を呼ぶ。戻り値を呼ぶと止まる。
+//
+// startLevelMeter とは別にしてあるのは、あちらが requestAnimationFrame で動くため。
+// タブが裏に回ると止まってしまうが、オフィスを裏に置いたまま話すのが普通の使い方なので、
+// こちらはタイマーで動かす。裏のタブではタイマーが1秒に1回まで遅くなるため、
+// 直近約0.7秒ぶんをまとめて調べ、その中に声があれば「話している」とする。
+const TALK_LEVEL = 0.1;      // startLevelMeter と同じ目盛り（RMS×8）。暗騒音で点かない程度に
+const TALK_HOLD_MS = 1500;   // 声が途切れてから消すまで。言葉の切れ目でちらつかせない
+export function startTalkDetector(stream, onTalk) {
+	const AC = window.AudioContext || window.webkitAudioContext;
+	if (!AC) return () => { };
+	const ac = new AC();
+	const analyser = ac.createAnalyser();
+	analyser.fftSize = 32768;   // 48kHz で約0.68秒ぶん
+	ac.createMediaStreamSource(stream).connect(analyser);
+	const buf = new Float32Array(analyser.fftSize);
+	const CHUNK = 1024;
+	let talking = false, lastLoud = 0;
+	const timer = setInterval(() => {
+		if (ac.state === "suspended") ac.resume().catch(() => { });
+		analyser.getFloatTimeDomainData(buf);
+		// 区切りごとの実効値のうち最大を見る。全体を均すと短い発話が埋もれる。
+		let peak = 0;
+		for (let i = 0; i + CHUNK <= buf.length; i += CHUNK) {
+			let sum = 0;
+			for (let j = i; j < i + CHUNK; j++) sum += buf[j] * buf[j];
+			peak = Math.max(peak, Math.sqrt(sum / CHUNK));
+		}
+		const now = Date.now();
+		if (peak * 8 >= TALK_LEVEL) lastLoud = now;
+		const on = lastLoud > 0 && now - lastLoud < TALK_HOLD_MS;
+		if (on !== talking) { talking = on; onTalk(on); }
+	}, 250);
+	return () => {
+		clearInterval(timer);
+		try { ac.close(); } catch { }
+		if (talking) { talking = false; onTalk(false); }
+	};
+}
+
 // 無音を送り続けるためのトラック。
 //
 // マイクを閉じたあとも「SFU から見ると送信が続いている」状態を保つためのもの。
