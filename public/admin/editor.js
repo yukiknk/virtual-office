@@ -4,6 +4,7 @@ import { GRID, COLS, ROWS, WORLD, w2s, s2w, setViewport, drawBase, drawGrid, dra
 import { store, CATEGORIES, FURNITURE } from "./store.js";
 import { saveLayout, saveZones, saveComments, saveFurniture } from "./data.js";
 import { updateSaveUI, trackSave } from "./ui.js";
+import { createRichEditor } from "../richtext.js";
 
 const stage = document.getElementById("stage");
 const canvas = document.getElementById("plan");
@@ -59,6 +60,10 @@ export function initEditor() {
 	canvas.addEventListener("pointerup", onUp);
 	window.addEventListener("resize", fit);
 
+	// 看板の文字の編集欄（部分ごとの装飾。オフィス画面と同じ部品）
+	commentEditor = createRichEditor(document.getElementById("c-editor"));
+	document.getElementById("c-bg").addEventListener("input", (e) => commentEditor.setBg(e.target.value));
+
 	// コメント設定モーダルのボタン
 	document.getElementById("c-cancel").addEventListener("click", closeCommentModal);
 	document.getElementById("c-save").addEventListener("click", saveCommentModal);
@@ -110,18 +115,16 @@ function clearFurniLink() {
 
 // ── コメント設定モーダル ──
 let commentDraft = null;   // { mode:"create"|"edit", target }
+let commentEditor = null;  // 文字の編集欄（richtext.js）。initEditor が作る
 
 function openCommentModal(mode, target) {
 	commentDraft = { mode, target };
 	const src = mode === "edit" ? target : {};
-	document.getElementById("c-text").value = src.text || "";
-	document.getElementById("c-size").value = String(src.size || 16);
-	document.getElementById("c-color").value = src.color || "#141815";
 	document.getElementById("c-bg").value = src.bg || "#ffffff";
-	document.getElementById("c-bold").checked = !!src.bold;
-	document.getElementById("c-italic").checked = !!src.italic;
+	commentEditor.set(src);
+	commentEditor.setBg(src.bg || "#ffffff");
 	document.getElementById("comment-modal").classList.add("open");
-	document.getElementById("c-text").focus();
+	commentEditor.focus();
 }
 function closeCommentModal() {
 	document.getElementById("comment-modal").classList.remove("open");
@@ -129,13 +132,12 @@ function closeCommentModal() {
 }
 function saveCommentModal() {
 	if (!commentDraft) return;
+	const { runs, text } = commentEditor.get();
+	// 装飾は runs が持つ。size / color / bold / italic は「指定なし」の値に戻しておく
 	const fields = {
-		text: document.getElementById("c-text").value.trim(),
-		size: Number(document.getElementById("c-size").value) || 16,
-		color: document.getElementById("c-color").value,
+		text, runs,
+		size: 16, color: "#141815", bold: false, italic: false,
 		bg: document.getElementById("c-bg").value,
-		bold: document.getElementById("c-bold").checked,
-		italic: document.getElementById("c-italic").checked,
 	};
 	if (commentDraft.mode === "create") {
 		const g = commentDraft.target;

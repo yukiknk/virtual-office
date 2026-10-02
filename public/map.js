@@ -66,7 +66,9 @@ export function drawBase(ctx, canvas) {
 
 // コメント（看板）を描く：角丸・枠線なし・やわらかい影。admin / office 共通。
 // 文字は枠の中央（左右・上下とも中央）に置き、枠の幅で折り返す。
-// c = { x, y, w, h, text, bg, color, size, bold, italic }
+// c = { x, y, w, h, text, bg, color, size, bold, italic, runs }
+// runs（部分ごとの装飾。形は richtext.js を参照）があればそちらで描き、
+// 無ければ text と全体の指定で描く（部分装飾が入る前に作られた看板）。
 export function drawCommentBox(ctx, c) {
 	const a = w2s(c.x, c.y), b = w2s(c.x + c.w, c.y + c.h);
 	const w = b.x - a.x, h = b.y - a.y;
@@ -89,6 +91,12 @@ export function drawCommentBox(ctx, c) {
 	ctx.shadowBlur = 0;
 	ctx.shadowOffsetY = 0;
 
+	if (Array.isArray(c.runs) && c.runs.length) {
+		drawRuns(ctx, c, a, w, h);
+		ctx.restore();
+		return;
+	}
+
 	// 文字の大きさ・行間・余白にも scale を掛ける。掛けないと拡大時に文字だけ小さく残る。
 	const size = (c.size || 16) * scale;
 	const weight = c.bold ? "700" : "400";
@@ -105,6 +113,83 @@ export function drawCommentBox(ctx, c) {
 	for (const ln of lines) { ctx.fillText(ln, cx, yy); yy += lineH; }
 
 	ctx.restore();
+}
+
+// ── 部分ごとに装飾した文字の描画 ──
+
+const FONT_FAMILY = "'M PLUS Rounded 1c', system-ui, 'Noto Sans JP', sans-serif";
+
+// 折り返しの計算結果。看板ごとに覚えておき、中身・幅・倍率が変わったときだけ計算し直す。
+// 1文字ずつ幅を測るので、毎フレームやり直すと看板の数×文字数ぶんの計測が走る。
+const layoutCache = new WeakMap();
+// Web フォントが届くと文字幅が変わるので、そのときは全部計算し直す
+let fontVersion = 0;
+if (typeof document !== "undefined" && document.fonts) {
+	document.fonts.addEventListener?.("loadingdone", () => { fontVersion++; });
+}
+
+function fontOf(c, run) {
+	const size = (run.s || c.size || 16) * scale;
+	return { size, font: `${run.i ? "italic " : ""}${run.b ? "700" : "400"} ${size}px ${FONT_FAMILY}` };
+}
+
+// runs を行に分ける。1行は「同じ装飾が続く部分（seg）」の並び。
+// 折り返しは1文字単位（日本語は単語の区切りが無いため。wrapLines と同じ考え方）。
+function layoutRuns(ctx, c, maxW) {
+	const hit = layoutCache.get(c);
+	if (hit && hit.runs === c.runs && hit.maxW === maxW && hit.scale === scale && hit.ver === fontVersion) return hit.lines;
+
+	const baseSize = (c.size || 16) * scale;
+	const newLine = () => ({ segs: [], w: 0, size: 0 });
+	const lines = [newLine()];
+	for (const run of c.runs) {
+		const f = fontOf(c, run);
+		ctx.font = f.font;
+		for (const ch of String(run.t || "")) {
+			if (ch === "\n") { lines.push(newLine()); continue; }
+			let line = lines[lines.length - 1];
+			const cw = ctx.measureText(ch).width;
+			if (line.segs.length && line.w + cw > maxW) { line = newLine(); lines.push(line); }
+			const last = line.segs[line.segs.length - 1];
+			if (last && last.run === run) { last.text += ch; last.w += cw; }
+			else line.segs.push({ run, text: ch, w: cw, size: f.size, font: f.font });
+			line.w += cw;
+			line.size = Math.max(line.size, f.size);
+		}
+	}
+	for (const line of lines) {
+		if (!line.size) line.size = baseSize;   // 空行は基準の大きさぶんの高さを取る
+		line.h = line.size * 1.3;
+	}
+	layoutCache.set(c, { runs: c.runs, maxW, scale, ver: fontVersion, lines });
+	return lines;
+}
+
+// 行ごとに中央へ寄せて描く。大きさの違う文字は、行の中で下端（ベースライン）を揃える。
+function drawRuns(ctx, c, a, w, h) {
+	const lines = layoutRuns(ctx, c, w - 16 * scale);
+	const total = lines.reduce((sum, l) => sum + l.h, 0);
+	const cx = a.x + w / 2;
+	let y = a.y + h / 2 - total / 2;
+	ctx.textAlign = "left";
+	ctx.textBaseline = "alphabetic";
+	for (const line of lines) {
+		const baseline = y + line.h * 0.5 + line.size * 0.35;
+		let x = cx - line.w / 2;
+		for (const seg of line.segs) {
+			const r = seg.run;
+			if (r.m) {   // マーカーは行の高さいっぱいではなく、その文字の高さぶんだけ塗る
+				ctx.fillStyle = r.m;
+				ctx.fillRect(x, baseline - seg.size * 0.9, seg.w, seg.size * 1.15);
+			}
+			ctx.font = seg.font;
+			ctx.fillStyle = r.c || c.color || "#141815";
+			ctx.fillText(seg.text, x, baseline);
+			if (r.u) ctx.fillRect(x, baseline + seg.size * 0.1, seg.w, Math.max(1, seg.size * 0.07));
+			x += seg.w;
+		}
+		y += line.h;
+	}
 }
 
 // 文字を枠の幅で折り返して行の配列にする。
