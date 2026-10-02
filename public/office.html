@@ -42,12 +42,6 @@
 		<aside id="rail">
 			<h2 class="rail-h" data-config="orgName">デモオフィス</h2>
 			<div id="roster"></div>   <!-- 在室者の一覧 -->
-			<!-- 状態を変えないボタン2つを横に並べる。離席・退出とは役割が違うので別の行にしてある
-			     （退出の隣に置くと、押し間違えたときに接続が切れる）。 -->
-			<div id="rail-tools">
-				<button type="button" id="people-btn">勤務者一覧</button>
-				<button type="button" id="comment-add-btn">看板を作成</button>
-			</div>
 
 			<div class="rail-sub">チャット</div>
 			<div id="chat-log"></div>   <!-- 古い順に並び、新着が下に足される。保存しないので退出で消える -->
@@ -62,6 +56,13 @@
 				<button type="submit" id="chat-send" aria-label="送信" title="送信（Enter）">➤</button>
 			</form>
 
+			<!-- 状態を変えないボタン2つを横に並べる。よく使う「看板を作成」に手が届きやすいよう、チャットの下に置く。
+			     離席・退出とは役割が違うので別の行にしてある
+			     （退出の隣に置くと、押し間違えたときに接続が切れる）。 -->
+			<div id="rail-tools">
+				<button type="button" id="people-btn">勤務者一覧</button>
+				<button type="button" id="comment-add-btn">看板を作成</button>
+			</div>
 			<div id="usage"></div>   <!-- 今月の転送量 -->
 			<div id="actions">
 				<button type="button" id="away-btn" class="actbtn">離席</button>
