@@ -16,6 +16,11 @@ const canvas = document.getElementById("plan");
 const ctx = canvas.getContext("2d");
 
 const LERP_DELAY = 120;     // 他人は120ms過去を補間して滑らかに描く
+const SIGN_ALPHA = 0.45;    // 人と重なっている看板の濃さ（下の人が透けて見える程度）
+
+// このフレームで描いた人の一覧。drawWallsAndActors が作り、drawComments が
+// 「看板と重なっている人」を調べるのに使う。
+let lastActors = [];
 
 // ポインタのイベントが書き、描画が読む状態。
 // hover は drawZones と drawComments が、drag* は drawComments が見る。
@@ -120,14 +125,44 @@ export function draw() {
 
 // コメント（看板）：角丸・枠線なし。常に最前面に表示する。
 // 管理者作成（store.comments）は表示のみ。オフィス作成（store.officeComments）はホバーで削除ボタン。
+//
+// 看板は人より上に描くので、重なると人も名前も隠れてしまう。そこで
+//   ・人と重なっている看板だけ半透明にする（重なっていない看板は読みやすいまま）
+//   ・重なっている人の名前・離席・吹き出しを、看板の上にもう一度描く
+// カーソルを乗せた看板と操作中の看板は、読めるよう不透明に戻す。
 function drawComments() {
-	for (const c of store.comments) drawCommentBox(ctx, c);
+	for (const c of store.comments) drawSign(c);
 	for (const c of store.officeComments) {
 		if (isExpired(c)) continue;   // 期限切れは表示しない
-		drawCommentBox(ctx, c);
+		drawSign(c);
 		// ホバー中・操作中は削除ボタンとリサイズ用のつまみを出す
 		if ((hover && pointInRect(hover, c)) || c === dragComment) { drawDeleteBtn(c); drawHandles(c); }
 	}
+	for (const a of lastActors) if (underSign(a)) drawActorLabels(a);
+}
+
+// 人ひとりが画面上で占める範囲（アバター＋名前＋離席ラベルをおおまかに囲む。ワールド座標）
+function actorBox(a) {
+	return { x: a.x - 44, y: a.y - DRAW_H - 16, w: 88, h: DRAW_H + 48 };
+}
+function rectsOverlap(a, b) {
+	return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+// 表示中の看板のどれかと重なっているか
+function underSign(a) {
+	const box = actorBox(a);
+	for (const c of store.comments) if (rectsOverlap(box, c)) return true;
+	for (const c of store.officeComments) if (!isExpired(c) && rectsOverlap(box, c)) return true;
+	return false;
+}
+function drawSign(c) {
+	const reading = (hover && pointInRect(hover, c)) || c === dragComment;
+	const covered = !reading && lastActors.some((a) => rectsOverlap(actorBox(a), c));
+	if (!covered) { drawCommentBox(ctx, c); return; }
+	ctx.save();
+	ctx.globalAlpha = SIGN_ALPHA;
+	drawCommentBox(ctx, c);
+	ctx.restore();
 }
 function pointInRect(p, c) { return p.x >= c.x && p.x < c.x + c.w && p.y >= c.y && p.y < c.y + c.h; }
 
@@ -219,10 +254,11 @@ function drawWallsAndActors() {
 			const dx = b[b.length - 1].x - b[b.length - 2].x, dy = b[b.length - 1].y - b[b.length - 2].y;
 			if (Math.hypot(dx, dy) > 1) { moving = true; o.dir = faceDir(dx, dy); }
 		}
-		actors.push({ x: p.x, y: p.y, name: o.name, color: "#b23a2a", away: o.away, awayMsg: o.awayMsg, dir: o.dir || "down", moving, avatar: o.avatar || DEFAULT_AVATAR });
+		actors.push({ x: p.x, y: p.y, name: o.name, color: "#b23a2a", away: o.away, awayMsg: o.awayMsg, talk: o.talk, dir: o.dir || "down", moving, avatar: o.avatar || DEFAULT_AVATAR });
 	}
-	actors.push({ x: store.me.x, y: store.me.y, name: store.me.name, color: "#1f3fb0", away: store.me.away, awayMsg: store.me.awayMsg, dir: store.me.dir, moving: store.me.moving, avatar: store.me.avatar });
+	actors.push({ x: store.me.x, y: store.me.y, name: store.me.name, color: "#1f3fb0", away: store.me.away, awayMsg: store.me.awayMsg, talk: store.me.talking, dir: store.me.dir, moving: store.me.moving, avatar: store.me.avatar });
 	actors.sort((a, b) => a.y - b.y);   // 南（下）にいる人ほど後に描く＝手前になる
+	lastActors = actors;
 
 	// 3) アバターを描いた直後、そのアバターより上に来るべき壁だけを描き直す
 	for (const a of actors) {
@@ -332,7 +368,6 @@ function drawActor(wx, wy, name, color, opt = {}) {
 		if (opt.away) ctx.globalAlpha = 0.4;   // 離席中は薄く描く
 		drawAvatar(ctx, cfg, { dir: opt.dir || "down", frame, dx: r.x, dy: r.y, dw: r.w, dh: r.h });
 		ctx.restore();
-		drawNamePill(wx, wt, name, color, opt.away);        // 名前は頭上に
 	} else {
 		// 画像未読込のあいだは丸で代用
 		ctx.save();
@@ -341,10 +376,55 @@ function drawActor(wx, wy, name, color, opt = {}) {
 		ctx.fillStyle = color; ctx.fill();
 		ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke();
 		ctx.restore();
-		drawNamePill(wx, wy - 24, name, color, opt.away);
 	}
 
-	if (opt.away) drawAwayLabel(feet.x, feet.y, opt.awayMsg);
+	drawActorLabels({ x: wx, y: wy, name, color, away: opt.away, awayMsg: opt.awayMsg, talk: opt.talk, avatar: cfg });
+}
+
+// アバターに付く文字や印（名前・離席・吹き出し）。
+// drawActor から呼ぶほか、看板と重なっている人のぶんは drawComments が看板の上に描き直す。
+function drawActorLabels(a) {
+	const bodyImg = layerImg("body", (a.avatar || DEFAULT_AVATAR).body);
+	const ready = !!(bodyImg && bodyImg.ready);
+	// 名前は頭上に。画像未読込（丸で代用）のときは丸のすぐ上
+	drawNamePill(a.x, ready ? a.y - DRAW_H + 6 : a.y - 24, a.name, a.color, a.away);
+	if (a.away) {
+		const feet = w2s(a.x, a.y);
+		drawAwayLabel(feet.x, feet.y, a.awayMsg);
+	} else if (a.talk) {
+		drawTalkBubble(a.x, a.y);
+	}
+}
+
+// 話している人の印。頭の右上に小さな吹き出しを出す。
+// 遠くからでも「この人たちは会話中だ」と分かるようにするためのもの。
+// 大きさは画面座標で固定（マップを縮小しても読める大きさを保つ）。
+function drawTalkBubble(wx, wy) {
+	const p = w2s(wx + 18, wy - DRAW_H + 22);   // 頭の右横あたり
+	const w = 24, h = 17, r = 8;
+	const x = p.x, y = p.y - h / 2;
+	ctx.save();
+	ctx.shadowColor = "rgba(0,0,0,0.25)"; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1;
+	ctx.beginPath();
+	ctx.roundRect(x, y, w, h, r);
+	// しっぽ（左下、頭のほうへ向ける）
+	ctx.moveTo(x + 5, y + h - 2);
+	ctx.lineTo(x - 2, y + h + 5);
+	ctx.lineTo(x + 11, y + h - 1);
+	ctx.closePath();
+	ctx.fillStyle = "#2a7d3f";
+	ctx.fill();
+	ctx.shadowColor = "transparent";
+	// 点3つを順に明るくして、動きで目に留まるようにする
+	const phase = Math.floor(Date.now() / 280) % 3;
+	for (let i = 0; i < 3; i++) {
+		ctx.globalAlpha = i === phase ? 1 : 0.45;
+		ctx.beginPath();
+		ctx.arc(x + 6 + i * 6, y + h / 2, 2, 0, Math.PI * 2);
+		ctx.fillStyle = "#ffffff";
+		ctx.fill();
+	}
+	ctx.restore();
 }
 
 // 名前の角丸ラベル（ワールド座標 wx / wtop の少し上に描く）

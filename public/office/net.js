@@ -90,6 +90,7 @@ function onState(msg) {
 		o.sfu = u.sfu;
 		o.away = !!u.away;
 		o.awayMsg = u.awayMsg || "";
+		o.talk = !!u.talk;   // 話しているか（アバターに吹き出しを出す）
 		if (u.avatar) o.avatar = u.avatar;   // 未設定の人の情報で既存の値を消さない
 		// 受信時刻つきで積む。scene.js が過去2点の間を補間して滑らかに動かす。
 		o.buf.push({ at: now, x: u.x, y: u.y });

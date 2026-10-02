@@ -11,7 +11,7 @@
 // 転送量が増えると、まず画面共有、次に音声の順に止まる（applyBudget）。
 import { store, zoneIdAt } from "./store.js";
 import { GRID } from "../map.js";
-import { openMic, micIdOf, startLevelMeter, playTestTone, getSilentTrack } from "../devices.js";
+import { openMic, micIdOf, startLevelMeter, startTalkDetector, playTestTone, getSilentTrack } from "../devices.js";
 import { KEY, write } from "../storage.js";
 
 // エリア外での会話範囲。panel.js と src/config.js にも同じ値がある（変えるときは3か所）。
@@ -68,6 +68,14 @@ function locked(fn) {
 
 // ボタンに最後に出した内容。同じなら DOM を触らない。
 let micBtnKey = "";
+
+// ── 発話の表示（アバターの吹き出し） ──
+// talkRaw は「マイクが声を拾っている」、talkSent は「全員に知らせてある状態」。
+// 知らせるのは声が実際に流れているとき（micLive）だけ。ミュート中や接続中に
+// 吹き出しが出ると、届いていない声が届いているように見えてしまう。
+let stopTalk = null;          // 検出の停止関数。マイクを閉じるときに呼ぶ
+let talkRaw = false;
+let talkSent = false;
 let screenBtnKey = "";
 let noticeTimer = null;       // 一時的なお知らせ（バナー）を消すタイマー
 
@@ -197,11 +205,14 @@ async function attachMic() {
 		if (t0) t0.onended = () => {
 			if (localStream !== stream) return;
 			if (stopMeter) { stopMeter(); stopMeter = null; }
+			if (stopTalk) { stopTalk(); stopTalk = null; }
 			setMeter(null);
 			localStream = null;
 			syncMicBtn();
 		};
 		startMeter();
+		if (stopTalk) stopTalk();
+		stopTalk = startTalkDetector(stream, (on) => { talkRaw = on; syncTalk(); });
 	}
 	// マイクを開いている間（1〜2秒かかることがある）にミュートされていたら、
 	// ここで送信を止めたままにする。無条件に有効化すると「ボタンはミュートなのに
@@ -240,6 +251,7 @@ async function releaseMic() {
 	mutedAt = 0;
 	if (!localStream) return;
 	if (stopMeter) { stopMeter(); stopMeter = null; }
+	if (stopTalk) { stopTalk(); stopTalk = null; }
 	setMeter(null);
 	// null ではなく無音に差し替える。null にすると送信そのものが止まり、
 	// SFU が相手への転送をやめてしまう（devices.js の getSilentTrack に経緯）。
@@ -486,6 +498,7 @@ async function teardownNow() {
 	// 離席・転送量の上限・接続の張り直しでここへ来る。いずれもマイクは即座に閉じる。
 	micSender = null;
 	await releaseMic();
+	talkSent = false;   // 再接続後はサーバーが覚えていないので、次に話したとき送り直す
 	syncMicBtn();
 }
 
@@ -618,6 +631,7 @@ function micErrorText(err) {
 // 利用者は ON にしたつもりでも、接続中・離席中・停止中は別の表示にして、
 // ボタンと実際の送信状況が食い違わないようにする。
 function syncMicBtn() {
+	syncTalk();   // マイクの状態が変わる場所は必ずここを通るので、吹き出しも一緒に合わせる
 	let v;
 	if (!micOn) v = micFailed ? { on: false, icon: "🚫", label: "マイク不可" } : { on: false, icon: "🔇", label: "ミュート中" };
 	else if (micLive()) v = { on: true, icon: "🎤", label: "ON" };
@@ -628,6 +642,17 @@ function syncMicBtn() {
 	if (key === micBtnKey) return;
 	micBtnKey = key;
 	setToolBtn("mic-btn", v);
+}
+
+// 「話している」を全員へ知らせる。変わったときだけ送る。
+function syncTalk() {
+	if (!localStream) talkRaw = false;
+	const on = talkRaw && micLive();
+	store.me.talking = on;   // 自分の吹き出しは送信を待たずに出す
+	if (on === talkSent) return;
+	talkSent = on;
+	const ws = store.ws;
+	if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: "talk", on }));
 }
 
 // 画面共有ボタンを実際の状態に合わせる。「共有中」は送信用の接続と映像が生きているときだけ。

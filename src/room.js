@@ -193,6 +193,7 @@ export class Room {
     else if (msg.t === "call") this.relayCall(ws, att, msg.to);
     else if (msg.t === "away") await this.onAway(ws, att, msg);
     else if (msg.t === "pos") this.onPos(ws, att, msg);
+    else if (msg.t === "talk") this.onTalk(ws, att, msg);
     else if (msg.t === "publish") this.onPublish(ws, att, msg);
     else if (msg.t === "unpublish") this.onUnpublish(ws, att, msg);
   }
@@ -288,11 +289,21 @@ export class Room {
     this.schedule();
   }
 
+  // 話している／いないの申告。全員のアバターに吹き出しを出すために配る。
+  // 音声を publish していない人の申告は受けない（声が届かないのに吹き出しだけ出るのを防ぐ）。
+  onTalk(ws, att, msg) {
+    const next = !!msg.on && !!att.audioTrack && !att.away;
+    if (next === !!att.talk) return;
+    att.talk = next;
+    ws.serializeAttachment(att);
+    this.schedule();
+  }
+
   // 送信の取り下げ。kind 指定が無ければ音声も画面も取り下げる。
   onUnpublish(ws, att, msg) {
     if (msg.kind === "screen") { att.screenTrack = undefined; att.screenSessionId = undefined; }
-    else if (msg.kind === "audio") att.audioTrack = undefined;
-    else { att.audioTrack = undefined; att.screenTrack = undefined; att.screenSessionId = undefined; }
+    else if (msg.kind === "audio") { att.audioTrack = undefined; att.talk = false; }
+    else { att.audioTrack = undefined; att.screenTrack = undefined; att.screenSessionId = undefined; att.talk = false; }
     ws.serializeAttachment(att);
     this.schedule();
   }
@@ -365,6 +376,7 @@ export class Room {
       const user = { id: att.id, name: att.name, x: p.x, y: p.y };
       if (att.avatar) user.avatar = att.avatar;
       if (att.away) { user.away = true; if (att.awayMsg) user.awayMsg = att.awayMsg; }
+      else if (att.talk && att.audioTrack) user.talk = true;
       if (att.sfuSessionId && (att.audioTrack || att.screenTrack)) {
         user.sfu = { sessionId: att.sfuSessionId };
         if (att.audioTrack) user.sfu.audio = att.audioTrack;

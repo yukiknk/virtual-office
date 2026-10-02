@@ -6,7 +6,7 @@
 //   タイマー … 1秒ごと。タブが裏に回ってループが止まっている間を埋める
 import { SHEETS, store } from "./store.js";
 import { loadAll } from "./api.js";
-import { KEY, writeJson } from "../storage.js";
+import { KEY, read, writeJson } from "../storage.js";
 import { connect, sendPos } from "./net.js";
 import { updateVoice, initVoiceUI } from "./voice.js";
 import { initMove, update } from "./move.js";
@@ -80,24 +80,31 @@ window.addEventListener("pagehide", savePos);
 
 // ── 起動 ──
 
-// 初期データ。await しないのは、データが揃う前に画面を出すため。届いたものから反映される。
-loadSheets();
-loadAll();
+// 氏名が保存されていない＝入室画面を通らずにこのページを直接開いた、ということ。
+// そのまま進めると「ゲスト」として入室してしまう（URL を自動で開く検査ツールなどが
+// 入室・退出を繰り返し、Slack にも流れる）。接続せずに入室画面へ送る。
+if (!read(KEY.name)) {
+	location.replace("index.html");
+} else {
+	// 初期データ。await しないのは、データが揃う前に画面を出すため。届いたものから反映される。
+	loadSheets();
+	loadAll();
 
-// サーバーへ接続（WebSocket）
-connect();
+	// サーバーへ接続（WebSocket）
+	connect();
 
-// UI のイベント登録
-initMove();
-initPointer();
-initVoiceUI();
-initCommentUI();
-initLinkPrompt();
-initChatUI();
-initAwayUI();
-initPeopleUI();
-initAlarm();
+	// UI のイベント登録
+	initMove();
+	initPointer();
+	initVoiceUI();
+	initCommentUI();
+	initLinkPrompt();
+	initChatUI();
+	initAwayUI();
+	initPeopleUI();
+	initAlarm();
 
-// 初回描画とループ開始
-fit();
-requestAnimationFrame(loop);
+	// 初回描画とループ開始
+	fit();
+	requestAnimationFrame(loop);
+}
