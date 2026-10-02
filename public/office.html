@@ -51,7 +51,8 @@
 			<form id="chat-form">
 				<!-- placeholder は panel.js が書き換える。チャットは全員ではなく声が届く範囲の人にだけ
 				     配られるので、いま誰に届くか（近くの人／会話エリアの名前）をここに出す。 -->
-				<textarea id="chat-input" placeholder="近くの人へのメッセージ" maxlength="500" rows="1"></textarea>
+				<textarea id="chat-input" placeholder="近くの人へのメッセージ" maxlength="500" rows="1"
+					title="Enter で送信 ／ Shift+Enter・Ctrl+Enter で改行"></textarea>
 				<!-- 入力欄の右下に重ねて置く（位置は style.css）。文字ではなく記号なので aria-label で読みを与える -->
 				<button type="submit" id="chat-send" aria-label="送信" title="送信（Enter）">➤</button>
 			</form>

@@ -329,7 +329,19 @@ export function initChatUI() {
 		// isComposing だけでは足りない。Mac の Safari は確定の Enter を「変換が終わったあと」の
 		// キーとして届けるため isComposing が false になる。そのとき keyCode は 229 なので併せて見る。
 		if (e.isComposing || e.keyCode === 229) return;
-		if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+		if (e.key !== "Enter") return;
+		// 改行は Shift+Enter のほか、Ctrl+Enter（Mac は Cmd+Enter）と Alt+Enter でも入れられる。
+		// Shift+Enter は textarea がもともと改行を入れるので何もしない。
+		// Ctrl などは押しても何も入らないので、カーソルの位置に自分で改行を入れる。
+		if (e.shiftKey) return;
+		e.preventDefault();
+		if (e.ctrlKey || e.metaKey || e.altKey) {
+			input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
+			autosize();
+			input.scrollTop = input.scrollHeight;   // 上限まで伸びたあとも、入れた行が見えるように
+			return;
+		}
+		submit();
 	});
 }
 
