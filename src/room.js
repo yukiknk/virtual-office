@@ -70,7 +70,7 @@ export class Room {
   // 管理者の「反映」：全利用者に再取得を促す（音声・接続はそのまま）
   broadcastReload() {
     const data = JSON.stringify({ t: "reload" });
-    for (const ws of this.ctx.getWebSockets()) { try { ws.send(data); } catch { } }
+    for (const ws of this.sockets()) { try { ws.send(data); } catch { } }
   }
 
   // ── オフィスで作られたコメント（全員共有・誰でも削除可） ──
@@ -92,7 +92,7 @@ export class Room {
   }
   broadcastComments() {
     const data = JSON.stringify({ t: "comments", list: this.comments || [] });
-    for (const ws of this.ctx.getWebSockets()) { try { ws.send(data); } catch { } }
+    for (const ws of this.sockets()) { try { ws.send(data); } catch { } }
   }
 
   // チャット中継：送信者のエリア内 or 近接の人（＋送信者本人）へ送る。
@@ -110,7 +110,7 @@ export class Room {
     const sp = posOf(att);
     const sz = sp ? zoneIdAtWorld(zones, sp.x, sp.y) : null;
     const out = JSON.stringify({ t: "chat", id: att.id, name: att.name, text });
-    for (const ws of this.ctx.getWebSockets()) {
+    for (const ws of this.sockets()) {
       const a2 = ws.deserializeAttachment();
       if (!a2 || !a2.name) continue;
       if (a2.id === att.id) { try { ws.send(out); } catch { } continue; }   // 送信者にも表示
@@ -131,7 +131,7 @@ export class Room {
     if (!att.name || typeof toId !== "string" || toId === att.id) return;
 
     let target = null;
-    for (const w of this.ctx.getWebSockets()) {
+    for (const w of this.sockets()) {
       const a = w.deserializeAttachment();
       if (a && a.id === toId) { target = { ws: w, att: a }; break; }
     }
@@ -218,6 +218,16 @@ export class Room {
     att.awayMsg = att.away ? String(msg.awayMsg || "").slice(0, 100) : "";
     // つなぎ直しか：退出通知を待っている最中、または同じ cid の古い接続がまだ残っている
     const rejoin = this.cancelLeave(att.cid) | this.hasCid(att.cid, att.id);
+    // 同じタブの古い接続が残っていたら、ここで退かせる。
+    // 切断の通知が届かないまま入り直すと（ページの移動のしかたや回線によっては起こる）、
+    // 古い接続が生きているように見え、「さっき退出した自分」がオフィスに残ってしまう。
+    // 4001 を受け取った側は、別のタブとして ID を作り直して入り直す（public/office/net.js）。
+    for (const w of this.sockets()) {
+      const a = w.deserializeAttachment();
+      if (!a || !a.name || a.cid !== att.cid || a.id === att.id) continue;
+      this.retire(w, a);
+      try { w.close(4001, "replaced"); } catch { }
+    }
     ws.serializeAttachment(att);
     ws.send(JSON.stringify({
       t: "welcome", id: att.id, token: att.token,
@@ -343,9 +353,32 @@ export class Room {
   async webSocketError(ws) { await this.drop(ws); }
   async drop(ws) {
     const att = ws.deserializeAttachment();
-    this.schedule();
     // 名前が無い＝入室前に切れた接続なので通知しない
-    if (att && att.name) this.scheduleLeave(att);
+    if (att && att.name) {
+      this.scheduleLeave(att);
+      this.retire(ws, att);
+    }
+    this.schedule();
+  }
+
+  // 開いている接続だけを返す。配信・判定はすべてこれを通す。
+  //
+  // ctx.getWebSockets() は、閉じかけ（CLOSING）の接続をしばらく返し続けることがある。
+  // 位置は接続に保存しているので、そのまま数えると「退出した人がまだいる」ように見える。
+  sockets() {
+    // 2 = CLOSING, 3 = CLOSED。「開いている」ではなく「閉じていない」で絞るのは、
+    // 状態が読めない場合に全員を消してしまわないため。
+    return this.ctx.getWebSockets().filter((ws) => ws.readyState !== 2 && ws.readyState !== 3);
+  }
+
+  // 接続を「いない人」にする。名前を空にすると入室前の接続と同じ扱いになり、
+  // 配信・チャット・呼び出し・転送量推定のすべてから外れる。
+  // sockets() の絞り込みと二重に守っているのは、接続の状態の見え方が実行環境任せのため。
+  retire(ws, att) {
+    att.name = "";
+    att.talk = false;
+    att.audioTrack = att.screenTrack = att.screenSessionId = undefined;
+    try { ws.serializeAttachment(att); } catch { }   // 閉じた接続では書けないことがある
   }
 
   // ── 退出の通知（再接続なら出さない） ──
@@ -356,7 +389,7 @@ export class Room {
 
   // 同じ cid の（入室済みの）接続が、exceptId 以外にあるか
   hasCid(cid, exceptId) {
-    for (const w of this.ctx.getWebSockets()) {
+    for (const w of this.sockets()) {
       const a = w.deserializeAttachment();
       if (a && a.name && a.cid === cid && a.id !== exceptId) return true;
     }
@@ -397,7 +430,7 @@ export class Room {
   // avatar / away / sfu は値があるときだけ入れて、送信量を削っている。
   broadcast() {
     const users = [];
-    for (const ws of this.ctx.getWebSockets()) {
+    for (const ws of this.sockets()) {
       const att = ws.deserializeAttachment();
       if (!att || !att.name) continue;
       // 位置がまだ届いていない人は載せない（左上 {0,0} にいる扱いにしない）。
@@ -419,7 +452,7 @@ export class Room {
       users.push(user);
     }
     const data = JSON.stringify({ t: "state", users });
-    for (const ws of this.ctx.getWebSockets()) {
+    for (const ws of this.sockets()) {
       try { ws.send(data); } catch { }
     }
   }
@@ -455,7 +488,7 @@ export class Room {
   // アラームが止まり、実行時間も課金されない。次の接続で ensureAlarm が起こし直す。
   async alarm() {
     await this.ensureBudgetLoaded();
-    const sockets = this.ctx.getWebSockets();
+    const sockets = this.sockets();
     this.sweepStale(sockets);
 
     const nowMonth = monthKey();
@@ -497,9 +530,7 @@ export class Room {
       if (!att || !att.name) continue;
       if (now - (att.at || 0) < STALE_MS) continue;
       this.scheduleLeave(att);   // Slack への退出通知（戻ってくれば取り消される）
-      att.name = "";
-      att.audioTrack = att.screenTrack = att.screenSessionId = undefined;
-      ws.serializeAttachment(att);
+      this.retire(ws, att);
       try { ws.close(4000, "stale"); } catch { }
       changed = true;
     }
@@ -569,7 +600,7 @@ export class Room {
 
   findByToken(token) {
     if (!token) return null;
-    for (const ws of this.ctx.getWebSockets()) {
+    for (const ws of this.sockets()) {
       const att = ws.deserializeAttachment();
       if (att && att.token === token) return { ws, att };
     }
