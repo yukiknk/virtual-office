@@ -21,6 +21,8 @@ const SIGN_ALPHA = 0.7;     // 人と重なっている看板の濃さ（下の�
 // このフレームで描いた人の一覧。drawWallsAndActors が作り、drawComments が
 // 「看板と重なっている人」を調べるのに使う。
 let lastActors = [];
+// 名前が重なるほど近くにいる人のまとまり。groupActors が作り、名前と吹き出しをまとめて描く。
+let lastGroups = [];
 
 // ポインタのイベントが書き、描画が読む状態。
 // hover は drawZones と drawComments が、drag* は drawComments が見る。
@@ -139,6 +141,7 @@ function drawComments() {
 		if ((hover && pointInRect(hover, c)) || c === dragComment) { drawDeleteBtn(c); drawHandles(c); }
 	}
 	for (const a of lastActors) if (underSign(a)) drawActorLabels(a);
+	for (const g of lastGroups) if (g.members.some((m) => underSign(m.a))) drawGroupLabel(g);
 	drawLocate();   // 場所の目印は看板より上（看板の下にいる人でも見つけられるように）
 }
 
@@ -287,12 +290,16 @@ function drawWallsAndActors() {
 	actors.push({ x: store.me.x, y: store.me.y, name: store.me.name, color: "#1f3fb0", away: store.me.away, awayMsg: store.me.awayMsg, talk: store.me.talking, dir: store.me.dir, moving: store.me.moving, avatar: store.me.avatar });
 	actors.sort((a, b) => a.y - b.y);   // 南（下）にいる人ほど後に描く＝手前になる
 	lastActors = actors;
+	lastGroups = groupActors(actors);
 
 	// 3) アバターを描いた直後、そのアバターより上に来るべき壁だけを描き直す
 	for (const a of actors) {
 		drawActor(a.x, a.y, a.name, a.color, a);
 		coverWalls(a.x, a.y, wallCells);
 	}
+
+	// 4) まとまっている人たちの名前は、全員を描いたあとにまとめて描く
+	for (const g of lastGroups) drawGroupLabel(g);
 }
 
 // アバターと重なる壁のうち「壁が上」になるものだけ描き直す。
@@ -406,31 +413,122 @@ function drawActor(wx, wy, name, color, opt = {}) {
 		ctx.restore();
 	}
 
-	drawActorLabels({ x: wx, y: wy, name, color, away: opt.away, awayMsg: opt.awayMsg, talk: opt.talk, avatar: cfg });
+	drawActorLabels({ x: wx, y: wy, name, color, away: opt.away, awayMsg: opt.awayMsg, talk: opt.talk, avatar: cfg, group: opt.group });
 }
 
 // アバターに付く文字や印（名前・離席・吹き出し）。
 // drawActor から呼ぶほか、看板と重なっている人のぶんは drawComments が看板の上に描き直す。
+//
+// ほかの人とまとまっている人（a.group あり）は、ここでは離席の表示だけを描く。
+// 名前と吹き出しは、まとまり全体のぶんを drawGroupLabel が一度に描く。
 function drawActorLabels(a) {
-	const bodyImg = layerImg("body", (a.avatar || DEFAULT_AVATAR).body);
-	const ready = !!(bodyImg && bodyImg.ready);
-	// 名前は頭上に。画像未読込（丸で代用）のときは丸のすぐ上
-	drawNamePill(a.x, ready ? a.y - DRAW_H + 6 : a.y - 24, a.name, a.color, a.away);
 	if (a.away) {
 		const feet = w2s(a.x, a.y);
 		drawAwayLabel(feet.x, feet.y, a.awayMsg);
-	} else if (a.talk) {
-		drawTalkBubble(a.x, a.y);
 	}
+	if (a.group) return;
+	const top = w2s(a.x, labelTopY(a));
+	const w = drawPillAt(top.x, top.y - 6, a.name, a.color, a.away, false);
+	// 吹き出しは名前の右隣。まとまりのときと同じ位置関係にして、名前とも重ならないようにする
+	if (a.talk && !a.away) drawBubbleAt(top.x + w / 2 + 5, top.y - 6);
 }
 
-// 話している人の印。頭の右上に小さな吹き出しを出す。
+// 名前ラベルを置く高さ（ワールド座標）。画像未読込（丸で代用）のときは丸のすぐ上。
+function labelTopY(a) {
+	const bodyImg = layerImg("body", (a.avatar || DEFAULT_AVATAR).body);
+	return (bodyImg && bodyImg.ready) ? a.y - DRAW_H + 6 : a.y - 24;
+}
+
+// ── 近くにいる人たちをひとまとまりとして扱う ──
+//
+// 人が近づくと名前ラベルどうしが重なって読めなくなる。そういうときは会話や共同作業を
+// していることがほとんどなので、1人ずつではなく「まとまり」として名前を並べ直す。
+//   2人 … 横に2つ
+//   3人 … 上に1つ・下に2つ（山の形）
+//   4人 … 2×2
+//   それ以上も同じ考え方（1段の数は人数の平方根を切り上げ、端数は一番上の段）
+// 吹き出しも、まとまりの中の誰かが話していれば1つだけ出す。誰が話しているかは、
+// その人の名前の枠を緑にして示す。
+
+const PILL_FONT = "500 12px 'M PLUS Rounded 1c', system-ui, 'Noto Sans JP', sans-serif";
+const PILL_H = 20;      // 名前ラベルの高さ（画面座標）
+const PILL_PAD = 9;     // 名前ラベルの左右の余白
+
+// 名前ラベルが重なる人どうしをまとめる。2人以上のまとまりだけを返し、
+// 属している人には a.group を付ける（drawActorLabels が個別の名前を描かない目印）。
+//
+// 「重なる」は画面上のラベルの矩形で判定する。距離で決めると、名前の長さやマップの
+// 縮尺によって、重なっているのにまとまらない・離れているのにまとまる、がずれる。
+// A と B、B と C が重なっていれば A と C が離れていても同じまとまりになる。
+function groupActors(actors) {
+	ctx.save();
+	ctx.font = PILL_FONT;
+	const items = actors.map((a) => {
+		const top = w2s(a.x, labelTopY(a));
+		return { a, cx: top.x, cy: top.y - 6, w: ctx.measureText(a.name).width + PILL_PAD * 2 };
+	});
+	ctx.restore();
+
+	// 重なる組を同じ根につなぐ（人数が少ないので総当たりで足りる）
+	const root = items.map((_, i) => i);
+	const find = (i) => { while (root[i] !== i) i = root[i] = root[root[i]]; return i; };
+	for (let i = 0; i < items.length; i++) {
+		for (let j = i + 1; j < items.length; j++) {
+			const p = items[i], q = items[j];
+			if (Math.abs(p.cx - q.cx) < (p.w + q.w) / 2 + 4 && Math.abs(p.cy - q.cy) < PILL_H + 4) root[find(i)] = find(j);
+		}
+	}
+	const byRoot = new Map();
+	items.forEach((it, i) => {
+		const r = find(i);
+		if (!byRoot.has(r)) byRoot.set(r, []);
+		byRoot.get(r).push(it);
+	});
+
+	const groups = [];
+	for (const members of byRoot.values()) {
+		if (members.length < 2) continue;
+		// 左にいる人から順に並べる。同じ位置なら名前順にして、毎フレーム入れ替わらないようにする
+		members.sort((p, q) => (p.cx - q.cx) || (p.a.name < q.a.name ? -1 : 1));
+		const g = { members };
+		for (const m of members) m.a.group = g;
+		groups.push(g);
+	}
+	return groups;
+}
+
+// まとまりの名前を、全員の頭上にまとめて描く。
+function drawGroupLabel(g) {
+	const ms = g.members, n = ms.length;
+	const cols = Math.ceil(Math.sqrt(n));
+	const first = n % cols || cols;   // 端数は一番上の段へ（3人なら 1+2、5人なら 2+3）
+	const rows = [ms.slice(0, first)];
+	for (let i = first; i < n; i += cols) rows.push(ms.slice(i, i + cols));
+
+	const GAP = 4, ROW = PILL_H + 4;
+	const cx = ms.reduce((sum, m) => sum + m.cx, 0) / n;   // 横はまとまりの中央
+	const baseY = Math.min(...ms.map((m) => m.cy));          // 一番下の段を、いちばん上にいる人の頭上に
+	const talking = (m) => m.a.talk && !m.a.away;
+	let bubble = null;
+	rows.forEach((row, r) => {
+		const y = baseY - (rows.length - 1 - r) * ROW;
+		const total = row.reduce((sum, m) => sum + m.w, 0) + GAP * (row.length - 1);
+		let x = cx - total / 2;
+		for (const m of row) {
+			drawPillAt(x + m.w / 2, y, m.a.name, m.a.color, m.a.away, talking(m));
+			x += m.w + GAP;
+		}
+		if (r === 0) bubble = { x: cx + total / 2 + 5, y };   // 吹き出しは一番上の段の右
+	});
+	if (ms.some(talking)) drawBubbleAt(bubble.x, bubble.y);
+}
+
+// 話している印の吹き出し。x は左端、y は上下の中央（画面座標）。
 // 遠くからでも「この人たちは会話中だ」と分かるようにするためのもの。
 // 大きさは画面座標で固定（マップを縮小しても読める大きさを保つ）。
-function drawTalkBubble(wx, wy) {
-	const p = w2s(wx + 18, wy - DRAW_H + 22);   // 頭の右横あたり
+function drawBubbleAt(x0, yc) {
 	const w = 24, h = 17, r = 8;
-	const x = p.x, y = p.y - h / 2;
+	const x = x0, y = yc - h / 2;
 	ctx.save();
 	ctx.shadowColor = "rgba(0,0,0,0.25)"; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1;
 	ctx.beginPath();
@@ -455,26 +553,28 @@ function drawTalkBubble(wx, wy) {
 	ctx.restore();
 }
 
-// 名前の角丸ラベル（ワールド座標 wx / wtop の少し上に描く）
-function drawNamePill(wx, wtop, name, color, away) {
-	const top = w2s(wx, wtop);
+// 名前の角丸ラベル。cx / cy は中心（画面座標）。
+// talking が true のときは枠を緑で太くする（まとまりの中で誰が話しているかの印）。幅を返す。
+function drawPillAt(cx, cy, name, color, away, talking) {
 	ctx.save();
 	if (away) ctx.globalAlpha = 0.6;
-	ctx.font = "500 12px 'M PLUS Rounded 1c', system-ui, 'Noto Sans JP', sans-serif";
+	ctx.font = PILL_FONT;
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
-	const padX = 9, h = 20;
-	const w = ctx.measureText(name).width + padX * 2;
-	const cx = top.x, cy = top.y - 6;
+	const h = PILL_H;
+	const w = ctx.measureText(name).width + PILL_PAD * 2;
 	ctx.shadowColor = "rgba(0,0,0,0.28)"; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1;
 	ctx.beginPath();
 	ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2);
 	ctx.fillStyle = "#ffffff"; ctx.fill();
 	ctx.shadowColor = "transparent";
-	ctx.lineWidth = 1.5; ctx.strokeStyle = color; ctx.stroke();
+	ctx.lineWidth = talking ? 2.5 : 1.5;
+	ctx.strokeStyle = talking ? "#2a7d3f" : color;
+	ctx.stroke();
 	ctx.fillStyle = "#141815";
 	ctx.fillText(name, cx, cy + 0.5);
 	ctx.restore();   // font・文字の揃え・globalAlpha はここで呼び出し元の値に戻る
+	return w;        // ラベルの幅。呼び出し元が隣に吹き出しを置くのに使う
 }
 
 // 離席バッジ＋理由をアバターの下に表示

@@ -100,7 +100,13 @@
 			<canvas id="plan" width="640" height="480"></canvas>
 
 			<div id="shares"></div>   <!-- 共有画面の小窓（voice.js） -->
-			<div id="share-big"><video autoplay playsinline muted></video></div>
+			<div id="share-big">
+				<!-- 映像と、誰の画面かの表示（voice.js が書く）を重ねるための枠 -->
+				<div class="share-big-box">
+					<video autoplay playsinline muted></video>
+					<span id="share-big-name" hidden></span>
+				</div>
+			</div>
 
 			<!-- 以下3つは hidden 属性で出し入れする。下のモーダル3つは .open クラス方式。
 			     背景を暗くするフェードが要るものだけ .open にしてある。 -->
