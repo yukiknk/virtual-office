@@ -9,12 +9,24 @@ import { loadAll } from "./api.js";
 import { applyBudget, teardownSfu } from "./voice.js";
 import { playAlarm, showCallNotification } from "./alarm.js";
 
-// このタブを見分ける ID。再接続しても変わらない。
+// このタブを見分ける ID。再接続しても、ページを再読み込みしても変わらない。
 // サーバーはこれを見て「同じ人がつなぎ直しただけ」を判別し、Slack へ
 // 退出・入室を流さないようにする（src/room.js の onHello / scheduleLeave）。
+//
+// sessionStorage に置くのは、タブごとに別の値で、再読み込みでは残り、タブを閉じると
+// 消えるため。localStorage だと同じ人の別タブと同じ値になり、片方を閉じたときの
+// 退出が通知されなくなる。storage.js を通さないのは、あちらが localStorage 専用のため。
+const CID_KEY = "office.cid";
 const CID = (() => {
-	try { return crypto.randomUUID().replace(/-/g, "").slice(0, 16); }
-	catch { return "c" + Math.random().toString(36).slice(2, 12); }   // http のままの環境では randomUUID が使えない
+	try {
+		const saved = sessionStorage.getItem(CID_KEY);
+		if (saved && /^[\w-]{1,32}$/.test(saved)) return saved;
+	} catch { }   // プライベートモードなどで読めなくても、下で作った値で動く
+	let id;
+	try { id = crypto.randomUUID().replace(/-/g, "").slice(0, 16); }
+	catch { id = "c" + Math.random().toString(36).slice(2, 12); }   // http のままの環境では randomUUID が使えない
+	try { sessionStorage.setItem(CID_KEY, id); } catch { }
+	return id;
 })();
 
 export function connect() {
