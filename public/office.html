@@ -112,10 +112,14 @@
 			<!-- 以下3つは hidden 属性で出し入れする。下のモーダル3つは .open クラス方式。
 			     背景を暗くするフェードが要るものだけ .open にしてある。 -->
 			<div id="call-alert" hidden></div>    <!-- 呼び出しを受けたときのバナー -->
-			<div id="call-prompt" hidden></div>   <!-- 近くの人を呼び出すボタン -->
-			<div id="link-prompt" hidden>         <!-- 看板の中のリンクを開く確認 -->
-				<span class="lp-text" id="link-label"></span>
-				<button type="button" class="lp-open" id="link-open">開く</button>
+			<!-- いまいる場所でできる操作（近くの人の呼び出し・家具のリンク）を、マップの下端に
+			     1本の帯としてまとめて出す。別々に重ねて出すと、人が集まったときにマップを覆ってしまう。 -->
+			<div id="prompts">
+				<div id="call-prompt" hidden></div>   <!-- 近くの人を呼び出すボタン（panel.js が中身を作る） -->
+				<div id="link-prompt" hidden>         <!-- 近くの家具に付いているリンク -->
+					<span class="lp-text" id="link-label"></span>
+					<button type="button" class="lp-open" id="link-open">開く</button>
+				</div>
 			</div>
 
 			<!-- 勤務者一覧。表示は scene.js が .open クラスで切り替える。 -->

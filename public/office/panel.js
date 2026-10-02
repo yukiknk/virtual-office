@@ -177,7 +177,9 @@ export function updateLinkPrompt() {
 
 	if (best) {
 		currentLink = best.url;
-		document.getElementById("link-label").textContent = `「${best.label || best.url}」を開きますか？`;
+		const label = document.getElementById("link-label");
+		label.textContent = `🔗 ${best.label || best.url}`;
+		label.title = best.label || best.url;   // 長くて切れたときも、乗せれば全部読める
 		el.hidden = false;
 	} else {
 		currentLink = null;
@@ -199,7 +201,7 @@ function nearbyCallTargets() {
 		const d = Math.hypot(p.x - store.me.x, p.y - store.me.y);
 		if (d <= NEAR) list.push({ id, name: o.name, d });
 	}
-	return list.sort((a, b) => a.d - b.d).slice(0, 3);   // 多すぎても押せないので近い順に3人まで
+	return list.sort((a, b) => a.d - b.d).slice(0, 6);   // 多すぎても押せないので近い順に6人まで
 }
 
 export function updateCallPrompt() {
@@ -214,11 +216,18 @@ export function updateCallPrompt() {
 
 	if (!targets.length) { el.hidden = true; el.replaceChildren(); return; }
 
-	el.replaceChildren(...targets.map((t) => {
+	// 「呼び出す」の見出しを1つ置き、相手の名前だけの小さな札を横に並べる。
+	// 1人ずつ「◯◯さんを呼び出す」と書いた大きなボタンを縦に積むと、人が集まったときに
+	// マップを覆ってしまう。
+	const cap = document.createElement("span");
+	cap.className = "prompt-cap";
+	cap.textContent = "🔔 呼び出す";
+	el.replaceChildren(cap, ...targets.map((t) => {
 		const btn = document.createElement("button");
 		btn.type = "button";
 		btn.className = "call-btn";
-		btn.textContent = `${t.name}さんを呼び出す`;
+		btn.textContent = t.name;
+		btn.title = `${t.name}さんを呼び出す`;
 		btn.addEventListener("click", () => {
 			sendCall(t.id);
 			btn.disabled = true;                                  // 連打防止（サーバー側でも弾く）
