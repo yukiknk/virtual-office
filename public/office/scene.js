@@ -16,7 +16,7 @@ const canvas = document.getElementById("plan");
 const ctx = canvas.getContext("2d");
 
 const LERP_DELAY = 120;     // 他人は120ms過去を補間して滑らかに描く
-const SIGN_ALPHA = 0.45;    // 人と重なっている看板の濃さ（下の人が透けて見える程度）
+const SIGN_ALPHA = 0.7;     // 人と重なっている看板の濃さ（下の人が透けて見える程度）
 
 // このフレームで描いた人の一覧。drawWallsAndActors が作り、drawComments が
 // 「看板と重なっている人」を調べるのに使う。

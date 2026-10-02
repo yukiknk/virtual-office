@@ -69,6 +69,38 @@ function locked(fn) {
 // ボタンに最後に出した内容。同じなら DOM を触らない。
 let micBtnKey = "";
 
+// ── エラーの記録 ──
+// マイクまわりの失敗は利用者の環境（ブラウザ・許可の設定・デバイス）に左右され、
+// 手元では再現しないことが多い。どの段階で何が起きたかをサーバーへ送って残す
+// （src/room.js の onClientErr。/api/client-errors で直近の記録を見られる）。
+let micStage = "";            // いま実行中の段階。"session" | "open" | "publish" | ""
+const STAGE_LABEL = { session: "接続の準備", open: "マイクを開く", publish: "送信の開始" };
+const reported = new Map();   // 同じ内容を続けて送らないための記録。キー -> 最後に送った時刻
+
+async function reportVoiceError(where, err, stage = micStage) {
+	try {
+		const name = (err && err.name) || "Error";
+		const message = String((err && err.message) || err || "").slice(0, 200);
+		// 周期処理の失敗は400msごとに繰り返すことがあるので、同じ内容は1分に1回まで
+		const key = `${where}|${stage}|${name}|${message}`;
+		const now = Date.now();
+		if (now - (reported.get(key) || 0) < 60_000) return;
+		reported.set(key, now);
+		// マイクの許可の状態（granted / prompt / denied）。「許可されていません」の切り分けに使う。
+		// 対応していないブラウザでは unknown のまま。
+		let perm = "unknown";
+		try { perm = (await navigator.permissions.query({ name: "microphone" })).state; } catch { }
+		const ws = store.ws;
+		if (!ws || ws.readyState !== WebSocket.OPEN) return;
+		ws.send(JSON.stringify({
+			t: "clienterr", where, stage, name, message, perm,
+			savedMic: !!store.micId,            // 入室画面で特定のマイクを選んでいたか
+			visible: !document.hidden,          // タブが前面にあったか
+			ua: navigator.userAgent.slice(0, 200),
+		}));
+	} catch { }
+}
+
 // ── 発話の表示（アバターの吹き出し） ──
 // talkRaw は「マイクが声を拾っている」、talkSent は「全員に知らせてある状態」。
 // 知らせるのは声が実際に流れているとき（micLive）だけ。ミュート中や接続中に
@@ -98,6 +130,7 @@ export async function updateVoice() {
 		await locked(voiceStep);
 	} catch (e) {
 		console.warn("[voice]", e);
+		reportVoiceError("cycle", e);
 		// publish や購読の途中で失敗すると、送信口や購読が半端に残る。
 		// 次の周期で畳んで張り直させる（そのまま続けると二重に publish される）。
 		sfuBroken = true;
@@ -139,6 +172,7 @@ async function voiceStep() {
 			// マイクが使えないときは送るのを諦め、ボタンも「マイク不可」にする。
 			// 放っておくと400msごとに開こうとし続ける。相手の声を受け取るほうは続ける。
 			console.warn("[voice] mic", e);
+			reportVoiceError("auto", e);
 			micFailed = true;
 			micOn = false;
 			applyMicGate();
@@ -193,6 +227,7 @@ async function rtcFetch(path, method, body) {
 async function attachMic() {
 	mutedAt = 0;
 	if (!localStream) {
+		micStage = "open";
 		const stream = await openMic(store.micId);
 		localStream = stream;
 		// 代替のマイクで開けた場合は選択を書き直す。
@@ -219,9 +254,11 @@ async function attachMic() {
 	// 声が届く」状態になる。
 	applyMicGate();
 	const track = localStream.getAudioTracks()[0];
-	if (!track || !sfuPc) return;
+	if (!track || !sfuPc) { micStage = ""; return; }
+	micStage = "publish";
 	if (!sfuPublished) await publishMic(track);
 	else if (micSender && micSender.track !== track) await micSender.replaceTrack(track);
+	micStage = "";
 	applyMicGate();
 }
 
@@ -282,11 +319,13 @@ async function maybeReleaseMic(targets) {
 // 相手の声を受け取るのに必要なのはここまでで、自分の声を送るのは別（publishMic）。
 async function ensureSession() {
 	if (sfuPc) return;
+	micStage = "session";
 	const data = await rtcFetch("/rtc/sessions/new", "POST");
 	sfuSessionId = data.sessionId;
 	sfuPc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], bundlePolicy: "max-bundle" });
 	sfuPc.ontrack = onTrack;
 	watchConnection(sfuPc);
+	micStage = "";
 }
 
 // 自分の声を送り始める。初めてミュートを解除したときに一度だけ走る。
@@ -617,8 +656,11 @@ function setMeter(v) {
 
 // 失敗の理由ごとに、次にやることを書く。
 // エラー名も併記する。報告を受けたときに原因を絞れるようにするため。
-function micErrorText(err) {
+function micErrorText(err, stage = "") {
 	const name = (err && err.name) || "Error";
+	// マイクを開く段階以外の失敗は、マイクの問題ではなく接続側の問題。
+	// マイク向けの案内（許可してください等）を出すと、利用者が見当違いの対処をしてしまう。
+	if (stage && stage !== "open") return `音声の接続に失敗しました（${STAGE_LABEL[stage] || stage}：${name}）。少し待ってから、もう一度お試しください。`;
 	if (name === "NotAllowedError") return "マイクの使用が許可されていません。アドレスバーの鍵アイコンからマイクを「許可」にしてください。";
 	if (name === "NotReadableError") return "マイクを他のアプリが使っています。Teams や Zoom を閉じてから、もう一度お試しください。";
 	if (name === "NotFoundError" || name === "OverconstrainedError") return "選んだマイクが見つかりません。一度退出して、入室画面でマイクを選び直してください。";
@@ -761,12 +803,14 @@ export function initVoiceUI() {
 				});
 			} catch (err) {
 				console.warn("[voice] unmute", err);
+				const stage = micStage;   // 記録と案内で同じ段階を使う（このあと書き換わるため控える）
+				reportVoiceError("unmute", err, stage);
 				micOn = false;
 				applyMicGate();
 				mutedAt = Date.now();   // 開いたまま失敗した場合に閉じられるようにする
 				if (isDeviceError(err)) micFailed = true;
 				else sfuBroken = true;   // 送信口が半端に残るので、次の周期で畳んで張り直す
-				alert(micErrorText(err));
+				alert(micErrorText(err, stage));
 			}
 			applyMicGate();
 			syncMicBtn();

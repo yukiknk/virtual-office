@@ -40,6 +40,7 @@ export class Room {
     this.comments = null;         // オフィスで作られたコメント（全員共有）。遅延読み込み
     this.callAt = new Map();      // 呼び出しの連打防止。"送信者id>相手id" -> 最後に送った時刻
     this.leaving = new Map();     // 退出通知の待ち。cid -> タイマー
+    this.errCount = new Map();    // エラー記録の件数。接続id -> 件数（消えても問題ない）
   }
 
   async fetch(req) {
@@ -47,6 +48,7 @@ export class Room {
     if (url.pathname === "/ws") return this.handleWs(req);
     if (url.pathname.startsWith("/rtc/")) return this.handleRtc(req, url);
     if (url.pathname === "/api/refresh") { this.broadcastReload(); return new Response("ok"); }
+    if (url.pathname === "/api/client-errors") return json((await this.ctx.storage.get("clientErrors")) || []);
     return new Response("Not found", { status: 404 });
   }
 
@@ -194,6 +196,7 @@ export class Room {
     else if (msg.t === "away") await this.onAway(ws, att, msg);
     else if (msg.t === "pos") this.onPos(ws, att, msg);
     else if (msg.t === "talk") this.onTalk(ws, att, msg);
+    else if (msg.t === "clienterr") await this.onClientErr(att, msg);
     else if (msg.t === "publish") this.onPublish(ws, att, msg);
     else if (msg.t === "unpublish") this.onUnpublish(ws, att, msg);
   }
@@ -287,6 +290,34 @@ export class Room {
     if (typeof msg.screenSessionId === "string") att.screenSessionId = msg.screenSessionId;
     ws.serializeAttachment(att);
     this.schedule();
+  }
+
+  // クライアントで起きたマイクまわりの失敗の記録（public/office/voice.js の reportVoiceError）。
+  // 利用者の環境でしか起きない不具合を調べるためのもの。直近50件を storage に残し、
+  // /api/client-errors で読める。ログにも出すので `wrangler tail` でも見られる。
+  // 1接続あたり30件まで（壊れたクライアントが送り続けても storage を埋めない）。
+  async onClientErr(att, msg) {
+    const n = (this.errCount.get(att.id) || 0) + 1;
+    this.errCount.set(att.id, n);
+    if (n > 30) return;
+    const str = (v, max) => String(v ?? "").slice(0, max);
+    const rec = {
+      at: new Date().toISOString(),
+      user: att.name || "",
+      where: str(msg.where, 20),       // unmute=ボタン操作 / auto=自動の付け直し / cycle=周期処理
+      stage: str(msg.stage, 20),       // session / open / publish
+      name: str(msg.name, 40),         // エラー名（NotAllowedError など）
+      message: str(msg.message, 200),
+      perm: str(msg.perm, 20),         // マイクの許可の状態
+      savedMic: !!msg.savedMic,
+      visible: !!msg.visible,
+      ua: str(msg.ua, 200),
+    };
+    console.log("[clienterr]", JSON.stringify(rec));
+    const list = (await this.ctx.storage.get("clientErrors")) || [];
+    list.push(rec);
+    if (list.length > 50) list.splice(0, list.length - 50);
+    await this.ctx.storage.put("clientErrors", list);
   }
 
   // 話している／いないの申告。全員のアバターに吹き出しを出すために配る。
