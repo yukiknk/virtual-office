@@ -69,15 +69,16 @@
 				<span class="bi">💬</span><span class="badge" hidden></span>
 			</button>
 
-			<!-- bi は畳んだときに出す絵、bl は開いているときに出す文字。どちらか一方だけが見える。 -->
+			<!-- bl は開いているときに出す文字。畳んだときは、絵（bi）か短い文字（bs）に替わる。
+			     2文字で収まるもの（看板・離席・退出）は文字のまま出し、収まらないものだけ絵にしている。 -->
 			<div id="rail-tools">
 				<button type="button" id="people-btn" title="勤務者一覧"><span class="bi">👥</span><span class="bl">勤務者一覧</span></button>
-				<button type="button" id="comment-add-btn" title="看板を作成"><span class="bi">📝</span><span class="bl">看板を作成</span></button>
+				<button type="button" id="comment-add-btn" title="看板を作成"><span class="bs">看板</span><span class="bl">看板を作成</span></button>
 			</div>
 			<div id="usage"></div>   <!-- 今月の転送量 -->
 			<div id="actions">
-				<button type="button" id="away-btn" class="actbtn" title="離席"><span class="bi">☕</span><span class="bl">離席</span></button>
-				<button type="button" id="leave-btn" class="actbtn danger" title="退出"><span class="bi">🚪</span><span class="bl">退出</span></button>
+				<button type="button" id="away-btn" class="actbtn" title="離席"><span class="bl">離席</span></button>
+				<button type="button" id="leave-btn" class="actbtn danger" title="退出"><span class="bl">退出</span></button>
 			</div>
 
 			<!-- ここ2つだけ voice.js の担当。

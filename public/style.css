@@ -1374,6 +1374,7 @@ body {
 }
 
 .bi,
+.bs,
 #rail #chat-open-btn {
 	display: none;
 }
@@ -1399,7 +1400,7 @@ body {
 }
 
 #admin.rail-collapsed {
-	grid-template-columns: 56px 1fr;
+	grid-template-columns: 60px 1fr;
 }
 
 .rail-collapsed #rail {
@@ -1420,8 +1421,23 @@ body {
 	display: none;
 }
 
-.rail-collapsed .bi {
+.rail-collapsed .bi,
+.rail-collapsed .bs {
 	display: inline;
+}
+
+/* 離席・退出は2文字なので、畳んでも文字のまま出す */
+.rail-collapsed #actions .bl {
+	display: inline;
+}
+
+/* 文字で出すボタンは、絵のボタンより小さい字にする */
+.rail-collapsed #rail #comment-add-btn,
+.rail-collapsed #actions .actbtn {
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0;
+	white-space: nowrap;   /* 2文字が縦に折り返さないようにする */
 }
 
 /* ボタンは縦1列に並べ、絵だけの正方形に近い形にする */
@@ -1450,11 +1466,6 @@ body {
 	border-radius: 10px;
 	font-size: 18px;
 	line-height: 1;
-}
-
-/* 退出は離席のすぐ下に来るので、押し間違えないよう間を空ける */
-.rail-collapsed #actions #leave-btn {
-	margin-top: 12px;
 }
 
 .rail-collapsed #rail #rail-toggle {
