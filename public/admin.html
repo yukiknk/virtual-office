@@ -79,35 +79,16 @@
 		<div class="cmodal-box">
 			<div class="cmodal-head">看板の設定</div>
 
-			<label class="cfield">
+			<div class="cfield">
 				<span class="clabel">テキスト</span>
-				<textarea id="c-text" rows="3" placeholder="文字を入力する"></textarea>
+				<!-- 部分ごとに装飾できる編集欄。中身（ボタンと入力欄）は richtext.js が作る -->
+				<div id="c-editor"></div>
+			</div>
+
+			<label class="cfield cfield-bg">
+				<span class="clabel">看板の背景色</span>
+				<input type="color" id="c-bg" value="#ffffff" />
 			</label>
-
-			<div class="crow">
-				<label class="cfield">
-					<span class="clabel">文字サイズ</span>
-					<select id="c-size">
-						<option value="12">小</option>
-						<option value="16" selected>中</option>
-						<option value="22">大</option>
-						<option value="30">特大</option>
-					</select>
-				</label>
-				<label class="cfield">
-					<span class="clabel">文字色</span>
-					<input type="color" id="c-color" value="#141815" />
-				</label>
-				<label class="cfield">
-					<span class="clabel">背景色</span>
-					<input type="color" id="c-bg" value="#ffffff" />
-				</label>
-			</div>
-
-			<div class="crow">
-				<label class="ccheck"><input type="checkbox" id="c-bold" /> 太字</label>
-				<label class="ccheck"><input type="checkbox" id="c-italic" /> 斜体</label>
-			</div>
 
 			<div class="cmodal-foot">
 				<button type="button" id="c-cancel">キャンセル</button>

@@ -14,6 +14,7 @@ import { store, zoneIdAt } from "./store.js";
 import { sendComment, sendChat, sendAway, sendCall } from "./net.js";
 import { stopMoving } from "./move.js";
 import { updateVoice } from "./voice.js";
+import { createRichEditor } from "../richtext.js";
 
 // エリア外にいる人どうしが会話できる範囲。voice.js が音声をつなぐ距離と、
 // サーバーがチャットを配る距離と、同じ値を別々に持っている。変えるときは3か所。
@@ -21,6 +22,8 @@ const NEAR = GRID * 2;
 
 // ── コメント作成モーダル（オフィス側） ──
 let editingComment = null;   // 再編集中の看板（null＝新規作成）
+let commentEditor = null;    // 文字の編集欄（richtext.js）。initCommentUI が作る
+const COMMENT_MAX = 300;     // 看板の文字数の上限。サーバー（src/helpers.js の cleanRuns）と揃えてある
 
 export function initCommentUI() {
 	const addBtn = document.getElementById("comment-add-btn");
@@ -31,6 +34,11 @@ export function initCommentUI() {
 	if (cancel) cancel.addEventListener("click", closeCommentModal);
 	if (save) save.addEventListener("click", saveCommentModal);
 	if (modal) modal.addEventListener("click", (e) => { if (e.target.id === "comment-modal") closeCommentModal(); });
+	const host = document.getElementById("c-editor");
+	if (host) commentEditor = createRichEditor(host);
+	// 背景色を変えたら編集欄にも写す（仕上がりの色の組み合わせを見ながら決められる）
+	const bg = document.getElementById("c-bg");
+	if (bg) bg.addEventListener("input", () => commentEditor && commentEditor.setBg(bg.value));
 	fillExpirySelects();
 }
 
@@ -70,12 +78,9 @@ export function openCommentModal(target) {
 	if (title) title.textContent = editingComment ? "看板の編集" : "看板の作成";
 	const save = document.getElementById("c-save");
 	if (save) save.textContent = editingComment ? "保存" : "作成";
-	document.getElementById("c-text").value = src.text || "";
-	document.getElementById("c-size").value = String(src.size || 16);
-	document.getElementById("c-color").value = src.color || "#141815";
 	document.getElementById("c-bg").value = src.bg || "#ffffff";
-	document.getElementById("c-bold").checked = !!src.bold;
-	document.getElementById("c-italic").checked = !!src.italic;
+	commentEditor.set(src);
+	commentEditor.setBg(src.bg || "#ffffff");
 	// 期限日時：既存はその値、新規は「今から1時間後」を初期値に
 	const base = src.expireAt ? new Date(src.expireAt) : new Date(Date.now() + 60 * 60 * 1000);
 	base.setSeconds(0, 0);
@@ -83,7 +88,7 @@ export function openCommentModal(target) {
 	const err = document.getElementById("c-err");
 	if (err) err.textContent = "";
 	document.getElementById("comment-modal").classList.add("open");
-	document.getElementById("c-text").focus();
+	commentEditor.focus();
 }
 function closeCommentModal() {
 	document.getElementById("comment-modal").classList.remove("open");
@@ -104,13 +109,14 @@ function saveCommentModal() {
 	if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) { setErr("その日付は存在しません。"); return; }
 	const expireAt = dt.getTime();
 	if (expireAt <= Date.now()) { setErr("未来の日時を指定してください。"); return; }
+	const { runs, text } = commentEditor.get();
+	if (text.length > COMMENT_MAX) { setErr(`文字は${COMMENT_MAX}文字までです（いま${text.length}文字）。`); return; }
+	// 装飾は runs が持つ。size / color / bold / italic は「指定なし」の値に戻しておく
+	// （runs を知らない古い画面で開いている人には、text がこの指定で表示される）。
 	const fields = {
-		text: document.getElementById("c-text").value.trim(),
-		size: Number(document.getElementById("c-size").value) || 16,
-		color: document.getElementById("c-color").value,
+		text, runs,
+		size: 16, color: "#141815", bold: false, italic: false,
 		bg: document.getElementById("c-bg").value,
-		bold: document.getElementById("c-bold").checked,
-		italic: document.getElementById("c-italic").checked,
 		expireAt,
 	};
 	// 保存はどちらも「サーバーへ送るだけ」。画面には自分で書かず、

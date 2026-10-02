@@ -31,13 +31,16 @@ export function cleanComment(c) {
   if (!c || typeof c !== "object") return null;
   const num = (v, d) => (Number.isFinite(+v) ? +v : d);
   const hex = (v, d) => (/^#[0-9a-fA-F]{6}$/.test(v) ? v : d);
+  const runs = cleanRuns(c.runs);
   return {
     id: (String(c.id || "").slice(0, 16)) || crypto.randomUUID().slice(0, 8),
     x: Math.max(0, Math.min(WORLD_W, num(c.x, 0))),
     y: Math.max(0, Math.min(WORLD_H, num(c.y, 0))),
     w: Math.max(16, Math.min(WORLD_W, num(c.w, 128))),
     h: Math.max(16, Math.min(WORLD_H, num(c.h, 64))),
-    text: String(c.text || "").slice(0, 300),
+    // runs があれば text はそこから作る（別々に送られてきた値を信用しない）
+    text: runs ? runs.map((r) => r.t).join("") : String(c.text || "").slice(0, 300),
+    ...(runs ? { runs } : {}),
     size: Math.max(8, Math.min(48, num(c.size, 16))),
     color: hex(c.color, "#141815"),
     bg: hex(c.bg, "#ffffff"),
@@ -45,6 +48,33 @@ export function cleanComment(c) {
     italic: !!c.italic,
     expireAt: Number.isFinite(+c.expireAt) ? Math.floor(+c.expireAt) : null,   // 消える日時（ms）。無ければ null
   };
+}
+
+// 部分ごとの装飾（public/richtext.js の runs）を検証する。使えるものが無ければ null。
+//
+// 文字数は全体で 300 まで（装飾なしの看板と同じ上限）。run の数にも上限を設けるのは、
+// 1文字ずつ別の装飾にされると、文字数のわりに保存するデータが膨らむため。
+function cleanRuns(list) {
+  if (!Array.isArray(list)) return null;
+  const hex = (v) => (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null);
+  const out = [];
+  let left = 300;
+  for (const r of list) {
+    if (out.length >= 150 || left <= 0) break;
+    if (!r || typeof r !== "object") continue;
+    const t = String(r.t ?? "").slice(0, left);
+    if (!t) continue;
+    left -= t.length;
+    const o = { t };
+    if (r.b) o.b = 1;
+    if (r.i) o.i = 1;
+    if (r.u) o.u = 1;
+    if (hex(r.c)) o.c = r.c;
+    if (hex(r.m)) o.m = r.m;
+    if (Number.isFinite(+r.s)) o.s = Math.max(8, Math.min(48, Math.round(+r.s)));
+    out.push(o);
+  }
+  return out.length ? out : null;
 }
 
 // ── Slack 通知 ──
