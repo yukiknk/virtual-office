@@ -4,6 +4,17 @@
 
 body {
 	margin: 0;
+	/* 入室画面（login.css）と同じ書体に揃える。指定しないとブラウザの既定の書体になり、
+	   PC によって明朝体で出たり、文字とボタンで書体が食い違ったりする。 */
+	font-family: 'M PLUS Rounded 1c', system-ui, 'Noto Sans JP', sans-serif;
+}
+
+/* ボタンや入力欄は、既定では周りの書体を引き継がない（OS の書体になる）ので明示する */
+button,
+input,
+select,
+textarea {
+	font-family: inherit;
 }
 
 #admin {
@@ -1431,15 +1442,6 @@ body {
 	display: inline;
 }
 
-/* 文字で出すボタンは、絵のボタンより小さい字にする */
-.rail-collapsed #rail #comment-add-btn,
-.rail-collapsed #actions .actbtn {
-	font-size: 12px;
-	font-weight: 700;
-	letter-spacing: 0;
-	white-space: nowrap;   /* 2文字が縦に折り返さないようにする */
-}
-
 /* ボタンは縦1列に並べ、絵だけの正方形に近い形にする */
 .rail-collapsed #rail-tools,
 .rail-collapsed #actions,
@@ -1466,6 +1468,27 @@ body {
 	border-radius: 10px;
 	font-size: 18px;
 	line-height: 1;
+}
+
+/* 文字で出すボタンは、絵のボタンより小さい字にする。
+   上の共通の指定（font-size: 18px）より後ろに置き、セレクタも強くしてある（そうしないと負ける）。 */
+.rail-collapsed #rail #rail-tools #comment-add-btn,
+.rail-collapsed #rail #actions .actbtn {
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0;
+	white-space: nowrap;   /* 2文字が縦に折り返さないようにする */
+}
+
+/* 畳んだときは、上の「開く」ボタン以外をすべて下に寄せる。
+   よく使うもの（看板・離席・マイクなど）に、画面の下側で手が届くようにするため。
+   先頭のチャットのボタンの上を空けると、それ以降がまとめて下へ送られる。 */
+.rail-collapsed #rail #chat-open-btn {
+	margin-top: auto;
+}
+
+.rail-collapsed #dock {
+	margin-top: 0;
 }
 
 .rail-collapsed #rail #rail-toggle {
