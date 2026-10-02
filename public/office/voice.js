@@ -159,12 +159,21 @@ function isDeviceError(e) {
 async function voiceStep() {
 	// 接続が壊れていたら、まず畳む。この下の ensureSession が最初から張り直す。
 	// 畳むのをここでやるのは、通知が来た瞬間に畳むと、実行中の購読処理の足元で
-	// sfuPc が消えてしまうため。
-	if (sfuBroken) { sfuBroken = false; await teardownNow(); }
+	// sfuPc が消えてしまうため。画面共有は別の接続なので巻き込まない。
+	if (sfuBroken) { sfuBroken = false; await teardownNow(true); }
 	if (!voiceAllowed()) { await teardownNow(); return; }   // 離席中は接続しない
+
+	// セッションは必要になるまで作らない。
+	// 作っただけで何も流さないセッションは、しばらくすると SFU 側で破棄される（以後は
+	// 410 が返る）。入室時に作っておくと、ひとりで作業していた人が初めてミュートを
+	// 解除したときに、その破棄済みのセッションへ送ろうとして失敗する。
+	const targets = currentTargets();
+	const wantMic = micOn && !micFailed;
+	if (!sfuPc && !wantMic && !wantsAny(targets)) { await maybeReleaseMic(targets); return; }
+
 	await ensureSession();
 	// micOn のまま接続が張り直された場合はここで付け直す。
-	if (micOn && !micFailed) {
+	if (wantMic) {
 		try {
 			await attachMic();
 		} catch (e) {
@@ -178,10 +187,18 @@ async function voiceStep() {
 			applyMicGate();
 		}
 	}
-	const targets = currentTargets();
 	await maybeReleaseMic(targets);
 	await updateSubscriptions(targets);
 	await closePending();
+}
+
+// 相手の中に、受け取るべき音声か画面を出している人がいるか
+function wantsAny(targets) {
+	for (const id of targets) {
+		const o = store.others.get(id);
+		if (o && o.sfu && (o.sfu.audio || o.sfu.screen)) return true;
+	}
+	return false;
 }
 
 // いま会話すべき相手（エリア内=同エリア / エリア外=近接）。
@@ -518,8 +535,11 @@ export function teardownSfu() {
 
 // 畳む本体。locked の中から呼ぶ。何も張っていなくてもマイクだけは必ず閉じる
 // （離席中にマイクが開いたまま残らないようにするため）。
-async function teardownNow() {
-	const hadScreen = stopScreenLocal();
+//
+// keepScreen = true は「音声側の接続が壊れたので張り直す」とき。画面共有は別の接続で
+// 生きているので止めない（止めると、他人の声を受け取り損ねただけで共有が切れる）。
+async function teardownNow(keepScreen = false) {
+	const hadScreen = keepScreen ? false : stopScreenLocal();
 	for (const sub of sfuSubs.values()) {
 		if (sub.audioEl) sub.audioEl.remove();
 		if (sub.videoEl) sub.videoEl.remove();
@@ -530,7 +550,10 @@ async function teardownNow() {
 	pendingClose.clear();
 	// 音声と画面のどちらかでも送っていたら取り下げを知らせる。
 	// 画面だけ共有していた場合にも送らないと、他の人に止まった画面が残り続ける。
-	if (sfuPublished || hadScreen) { try { store.ws.send(JSON.stringify({ t: "unpublish" })); } catch { } }
+	if (sfuPublished || hadScreen) {
+		const msg = keepScreen ? { t: "unpublish", kind: "audio" } : { t: "unpublish" };
+		try { store.ws.send(JSON.stringify(msg)); } catch { }
+	}
 	sfuPublished = false;
 	if (sfuPc) { try { sfuPc.close(); } catch { } sfuPc = null; }
 	sfuSessionId = null;
@@ -551,8 +574,6 @@ function canShare() {
 async function startScreen() {
 	if (screenStarting || screenStream) return;   // 開始処理中の押し直しで二重に共有しない
 	if (store.me.away) { alert("離席中は画面共有できません"); return; }
-	// 画面共有の publish は音声のセッションIDを一緒に送るので、それが無いと成立しない
-	if (!sfuSessionId) { alert("音声の準備中です。少し待ってから再度お試しください。"); return; }
 	if (store.budgetLevel !== "ok") { alert("転送量の上限に近づいているため、画面共有は停止中です"); return; }
 	if (!store.myId) return;
 
@@ -566,6 +587,9 @@ async function startScreen() {
 		// 画面選択のダイアログはユーザー操作の直後にしか出せないので、
 		// await を挟む前に呼ぶ（先に SFU を用意すると出せなくなる）
 		try { stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 10 }, audio: false }); } catch { return; }
+		// 画面共有の publish は音声側のセッションIDを一緒に送る。セッションは必要になるまで
+		// 作らないので、まだ無ければここで用意する。
+		await locked(async () => { if (voiceAllowed() && isConnected()) await ensureSession(); });
 		if (gen !== screenGen || !canShare()) throw new Error("cancelled");
 		// 画面送信は専用のセッション/PCで行う（購読用の sfuPc と分離＝SDP衝突を防ぐ）
 		const data = await rtcFetch("/rtc/sessions/new", "POST");
@@ -798,8 +822,22 @@ export function initVoiceUI() {
 					// サーバーとまだつながっていない場合も、ここでは開かない
 					// （つながり次第 updateVoice が micOn を見て付ける）。
 					if (!micOn || !voiceAllowed() || !isConnected()) return;
-					await ensureSession();
-					await attachMic();
+					// 壊れていると分かっている接続には送らない（周期処理を待たずにここで畳む）
+					if (sfuBroken) { sfuBroken = false; await teardownNow(true); }
+					try {
+						await ensureSession();
+						await attachMic();
+					} catch (e) {
+						if (isDeviceError(e)) throw e;   // マイク自体の問題は張り直しても直らない
+						// SFU 側の失敗（破棄済みのセッションに送って 410 が返る、など）。
+						// 利用者に押し直させず、張り直して1回だけやり直す。
+						console.warn("[voice] unmute retry", e);
+						reportVoiceError("unmute-retry", e);
+						await teardownNow(true);
+						if (!micOn || !voiceAllowed() || !isConnected()) return;
+						await ensureSession();
+						await attachMic();
+					}
 				});
 			} catch (err) {
 				console.warn("[voice] unmute", err);
