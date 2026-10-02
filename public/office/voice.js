@@ -419,7 +419,7 @@ function onTrack(ev) {
 // 要素は最初の1回だけ作り、以後は srcObject の差し替えで使い回す。
 function attachStream(sub, stream) {
 	if (sub.kind === "screen") {
-		if (!sub.videoEl) sub.videoEl = addScreenTile();   // 共有ごとに小さいタイルを用意
+		if (!sub.videoEl) sub.videoEl = addScreenTile(sub.name);   // 共有ごとに小さいタイルを用意
 		sub.videoEl.srcObject = stream;
 		sub.videoEl.play?.().catch(() => { });
 		return;
@@ -452,7 +452,7 @@ async function updateSubscriptions(targetIds) {
 		if (o.sfu.audio) want.set(`${o.sfu.sessionId}/${o.sfu.audio}`, { sessionId: o.sfu.sessionId, trackName: o.sfu.audio, kind: "audio" });
 		if (allowScreen && o.sfu.screen) {
 			const ssid = o.sfu.screenSessionId || o.sfu.sessionId;   // 画面は別セッション
-			want.set(`${ssid}/${o.sfu.screen}`, { sessionId: ssid, trackName: o.sfu.screen, kind: "screen" });
+			want.set(`${ssid}/${o.sfu.screen}`, { sessionId: ssid, trackName: o.sfu.screen, kind: "screen", name: o.name });
 		}
 	}
 	for (const [key, t] of want) if (!sfuSubs.has(key)) await subscribe(key, t);
@@ -474,7 +474,7 @@ async function subscribe(key, t) {
 	// SFU が「今すぐ再ネゴせよ」と言ってきたら応じる（新しい受信口が増えたとき）。
 	// ここで失敗しても登録前なので、やはり次の周期で再試行される。
 	if (resp.requiresImmediateRenegotiation) await renegotiate(resp.sessionDescription);
-	const sub = { mid, kind: t.kind, audioEl: null, videoEl: null };
+	const sub = { mid, kind: t.kind, name: t.name || "", audioEl: null, videoEl: null };
 	sfuSubs.set(key, sub);
 	attachSub(sub);   // mid から受信トラックを取り出して確実に表示/再生（複数共有でも取りこぼさない）
 }
@@ -493,7 +493,7 @@ async function unsubscribe(key) {
 	if (!sub) return;
 	sfuSubs.delete(key);
 	if (sub.audioEl) sub.audioEl.remove();
-	if (sub.videoEl) { closeBigIfShowing(sub.videoEl.srcObject); sub.videoEl.remove(); }
+	if (sub.videoEl) { closeBigIfShowing(sub.videoEl.srcObject); removeTile(sub.videoEl); }
 	if (sub.mid != null) pendingClose.add(sub.mid);
 	await closePending();
 }
@@ -542,7 +542,7 @@ async function teardownNow(keepScreen = false) {
 	const hadScreen = keepScreen ? false : stopScreenLocal();
 	for (const sub of sfuSubs.values()) {
 		if (sub.audioEl) sub.audioEl.remove();
-		if (sub.videoEl) sub.videoEl.remove();
+		if (sub.videoEl) removeTile(sub.videoEl);
 	}
 	if (sfuSubs.size) closeBig();
 	sfuSubs.clear();
@@ -613,7 +613,7 @@ async function startScreen() {
 		store.ws.send(JSON.stringify({ t: "publish", sessionId: sfuSessionId, screenSessionId, screen: `screen-${store.myId}` }));
 		track.onended = () => { if (screenStream === stream) stopScreen(); };   // ブラウザの「共有を停止」に追従
 		// 自分の共有プレビューを自分の画面にも出す（共有できているか確認用）
-		selfTile = addScreenTile();
+		selfTile = addScreenTile("自分");
 		selfTile.classList.add("self");
 		selfTile.title = "自分の共有（クリックで拡大）";
 		selfTile.srcObject = screenStream;
@@ -636,7 +636,7 @@ async function startScreen() {
 function stopScreenLocal() {
 	screenGen++;   // 開始処理の途中なら、そちらに「止められた」と伝える
 	const had = !!(screenStream || screenPc);
-	if (selfTile) { closeBigIfShowing(selfTile.srcObject); selfTile.remove(); selfTile = null; }
+	if (selfTile) { closeBigIfShowing(selfTile.srcObject); removeTile(selfTile); selfTile = null; }
 	if (screenStream) { for (const t of screenStream.getTracks()) t.stop(); screenStream = null; }
 	if (screenPc) { try { screenPc.close(); } catch { } screenPc = null; }   // 専用PCごと閉じる
 	screenSessionId = null;
@@ -741,21 +741,36 @@ function setToolBtn(id, { on, icon, label } = {}) {
 	if (on !== undefined) b.classList.toggle("on", on);
 }
 // 受信した画面共有ごとの小さいタイルを作る（クリックで拡大）
-function addScreenTile() {
-	const wrap = document.getElementById("shares");
+function addScreenTile(name) {
+	const host = document.getElementById("shares");
+	// 映像の上に名前を重ねるための枠。複数人が同時に共有したとき、どれが誰の画面か分かるようにする。
+	const wrap = document.createElement("div");
+	wrap.className = "screen-wrap";
 	const v = document.createElement("video");
 	v.autoplay = true; v.playsInline = true; v.muted = true;
 	v.className = "screen-tile";
 	v.title = "クリックで拡大";
-	v.addEventListener("click", () => enlargeBig(v.srcObject));
-	wrap.appendChild(v);
+	v.addEventListener("click", () => enlargeBig(v.srcObject, name));
+	const label = document.createElement("span");
+	label.className = "screen-name";
+	label.textContent = name || "";
+	label.hidden = !name;
+	wrap.append(v, label);
+	host.appendChild(wrap);
+	v._wrap = wrap;   // 片づけるときは枠ごと消す（removeTile）
 	return v;
 }
-// 拡大表示（中央の大きいオーバーレイ）
-function enlargeBig(stream) {
+// タイルを片づける。addScreenTile が作った枠ごと消す。
+function removeTile(v) {
+	(v._wrap || v).remove();
+}
+// 拡大表示（中央の大きいオーバーレイ）。誰の画面かも一緒に出す。
+function enlargeBig(stream, name) {
 	const big = document.getElementById("share-big");
 	const bv = big.querySelector("video");
 	bv.srcObject = stream;
+	const label = document.getElementById("share-big-name");
+	if (label) { label.textContent = name ? `${name}の画面` : ""; label.hidden = !name; }
 	big.classList.add("on");
 	bv.play?.().catch(() => { });
 }
