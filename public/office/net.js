@@ -17,17 +17,23 @@ import { playAlarm, showCallNotification } from "./alarm.js";
 // 消えるため。localStorage だと同じ人の別タブと同じ値になり、片方を閉じたときの
 // 退出が通知されなくなる。storage.js を通さないのは、あちらが localStorage 専用のため。
 const CID_KEY = "office.cid";
-const CID = (() => {
+let CID = loadCid();
+
+function loadCid() {
 	try {
 		const saved = sessionStorage.getItem(CID_KEY);
 		if (saved && /^[\w-]{1,32}$/.test(saved)) return saved;
 	} catch { }   // プライベートモードなどで読めなくても、下で作った値で動く
+	return newCid();
+}
+
+function newCid() {
 	let id;
 	try { id = crypto.randomUUID().replace(/-/g, "").slice(0, 16); }
 	catch { id = "c" + Math.random().toString(36).slice(2, 12); }   // http のままの環境では randomUUID が使えない
 	try { sessionStorage.setItem(CID_KEY, id); } catch { }
 	return id;
-})();
+}
 
 export function connect() {
 	// ローカル開発（http）と本番（https）の両方で動くようプロトコルを合わせる
@@ -48,11 +54,22 @@ export function connect() {
 
 	// error は listen していない。WebSocket はエラーの後に必ず close が来るので close だけで足りる。
 	// 再接続の間隔は1秒固定。部屋が1つの小規模用途なので、バックオフは入れていない。
-	ws.addEventListener("close", () => {
+	ws.addEventListener("close", (e) => {
 		teardownSfu();
+		// 4001 は「同じ ID の別の接続が入ってきたので退かされた」。タブを複製すると
+		// sessionStorage ごと写るので、2つのタブが同じ ID になる。そのまま入り直すと
+		// 互いに退かし合うので、退かされた側が ID を作り直して別のタブとして入る。
+		if (e.code === 4001) CID = newCid();
 		setTimeout(connect, 1000);   // 切れたら再接続
 	});
 }
+
+// ページを離れるとき（退出ボタン・タブを閉じる・別のページへ移動）は、こちらから接続を閉じる。
+// ブラウザ任せにすると、ページが「戻る」用に保持された場合などに切断が遅れ、
+// そのあいだ他の人の画面にアバターが残る。戻ってきたときは close の処理が再接続する。
+window.addEventListener("pagehide", () => {
+	try { if (store.ws) store.ws.close(1000, "leave"); } catch { }
+});
 
 // ── 受信 ──
 

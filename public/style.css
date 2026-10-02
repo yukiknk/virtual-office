@@ -820,8 +820,56 @@ body {
 	overflow-y: auto;
 }
 
-.screen-tile {
+/* 共有画面1つぶんの枠。映像の上に名前を重ねるために relative にしてある */
+.screen-wrap {
+	position: relative;
+	flex: none;
 	width: 220px;
+	line-height: 0;
+}
+
+/* 誰の画面か（小窓の左下・拡大表示の左下で共通の見た目） */
+.screen-name,
+#share-big-name {
+	position: absolute;
+	left: 8px;
+	bottom: 8px;
+	max-width: calc(100% - 16px);
+	padding: 2px 9px;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.68);
+	color: #fff;
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 1.5;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	/* クリックは下の映像に通す（拡大・縮小を邪魔しない） */
+	pointer-events: none;
+}
+
+#share-big-name {
+	left: 14px;
+	bottom: 14px;
+	font-size: 14px;
+	padding: 4px 14px;
+}
+
+.screen-name[hidden],
+#share-big-name[hidden] {
+	display: none;
+}
+
+.share-big-box {
+	position: relative;
+	width: min(90%, 1100px);
+	line-height: 0;
+}
+
+.screen-tile {
+	display: block;
+	width: 100%;
 	aspect-ratio: 16 / 9;
 	object-fit: contain;
 	background: #000;
@@ -853,7 +901,8 @@ body {
 }
 
 #share-big video {
-	width: min(90%, 1100px);
+	display: block;
+	width: 100%;
 	aspect-ratio: 16 / 9;
 	object-fit: contain;
 	background: #000;
