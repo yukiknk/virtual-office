@@ -1,10 +1,46 @@
 // レイアウトと会話エリアの保存・読み込み（サーバーAPI / KV）。
 import { store } from "./store.js";
 
+// 読み込みに失敗した項目（"layout" など）。1つでも入っているあいだは保存しない。
+// 失敗を空として扱って保存すると、本番のデータを空で上書きしてしまうため。
+export const loadFailed = new Set();
+
+// 一覧を取得する。失敗したら null を返し、loadFailed に記録する。
+async function getList(path, key) {
+	try {
+		const res = await fetch(path);
+		if (!res.ok) throw new Error(`HTTP ${res.status}`);
+		const list = await res.json();
+		if (!Array.isArray(list)) throw new Error("配列ではありません");
+		loadFailed.delete(key);
+		return list;
+	} catch (e) {
+		console.warn("読み込み失敗", path, e);
+		loadFailed.add(key);
+		return null;
+	}
+}
+
+// 一覧を保存する。成功したら true。
+// fetch は 400 や 413 でも例外を投げないので、res.ok を見ないと失敗に気づけない。
+async function postList(path, data) {
+	if (loadFailed.size) return false;
+	try {
+		const res = await fetch(path, {
+			method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+		});
+		if (!res.ok) console.warn("保存失敗", path, res.status);
+		return res.ok;
+	} catch (e) {
+		console.warn("保存失敗", path, e);
+		return false;
+	}
+}
+
 // ── レイアウト ──
 export async function loadLayout() {
-	let list;
-	try { list = await (await fetch("/api/layout")).json(); } catch { list = []; }
+	const list = await getList("/api/layout", "layout");
+	if (!list) return;   // 失敗時は今の内容を触らない
 	for (const m of Object.values(store.layers)) m.clear();
 	store.blocked.clear();
 	for (const item of list) {
@@ -29,30 +65,26 @@ export function saveLayout() {
 		const [col, row] = key.split(",").map(Number);
 		list.push({ col, row, layer: "block" });
 	}
-	return fetch("/api/layout", {
-		method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(list),
-	}).catch((e) => console.warn("保存失敗", e));
+	return postList("/api/layout", list);
 }
 
 // ── 会話エリア ──
 export async function loadZones() {
-	try { store.zones = await (await fetch("/api/zones")).json(); } catch { store.zones = []; }
+	const list = await getList("/api/zones", "zones");
+	if (list) store.zones = list;
 }
 
 export function saveZones() {
-	return fetch("/api/zones", {
-		method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(store.zones),
-	}).catch((e) => console.warn("エリア保存失敗", e));
+	return postList("/api/zones", store.zones);
 }
 
 // ── 家具 ──
 export async function loadFurniture() {
-	try { store.furniture = await (await fetch("/api/furniture")).json(); } catch { store.furniture = []; }
+	const list = await getList("/api/furniture", "furniture");
+	if (list) store.furniture = list;
 }
 export function saveFurniture() {
-	return fetch("/api/furniture", {
-		method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(store.furniture),
-	}).catch((e) => console.warn("家具保存失敗", e));
+	return postList("/api/furniture", store.furniture);
 }
 
 // ── Slack 通知先（Webhook URL） ──
@@ -76,11 +108,10 @@ export async function saveWebhook(url) {
 
 // ── コメント（メモ） ──
 export async function loadComments() {
-	try { store.comments = await (await fetch("/api/comments")).json(); } catch { store.comments = []; }
+	const list = await getList("/api/comments", "comments");
+	if (list) store.comments = list;
 }
 
 export function saveComments() {
-	return fetch("/api/comments", {
-		method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(store.comments),
-	}).catch((e) => console.warn("コメント保存失敗", e));
+	return postList("/api/comments", store.comments);
 }

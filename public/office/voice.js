@@ -52,44 +52,94 @@ let screenStream = null;      // 自分の画面共有
 let screenPc = null;          // 画面送信専用の RTCPeerConnection（購読用と分離）
 let screenSessionId = null;   // 画面送信専用の SFU セッション
 let selfTile = null;          // 自分の共有プレビュー（自分の画面にも小さく表示）
+let screenStarting = false;   // 画面共有の開始処理中か（二重開始を防ぎ、ボタンに「準備中」を出す）
+let screenGen = 0;            // 画面共有の世代。止めるたびに進め、開始処理の途中で止められたことを検知する
+
+// ── 直列化 ──
+// SFU 用の接続（sfuPc）に触る処理は必ずここを通して1つずつ実行する。
+// 周期処理（updateVoice）とボタン操作（ミュート解除）が同じ接続の上で同時に
+// SDP をやりとりすると衝突するため。
+let voiceChain = Promise.resolve();
+function locked(fn) {
+	const p = voiceChain.then(fn);
+	voiceChain = p.catch(() => { });
+	return p;
+}
+
+// ボタンに最後に出した内容。同じなら DOM を触らない。
+let micBtnKey = "";
+let screenBtnKey = "";
+let noticeTimer = null;       // 一時的なお知らせ（バナー）を消すタイマー
 
 // ── メイン更新 ──
 // main.js から400msごとに呼ばれ、「今つながっているべき相手」と実際の購読の差を埋める。
 //
 // voiceBusy が多重実行ガード。await を挟むので、前回が終わる前に次が入ると
 // SFU とのやりとりが交錯する。main.js が重複呼び出しを気にしなくていいのはこれのおかげ。
+// 実際の処理は locked を通すので、ボタン操作（ミュート解除）とも重ならない。
 export async function updateVoice() {
+	// 離席したらマイクはミュートに戻す。着席しても自動では ON に戻さない
+	// （席に戻った瞬間に、気づかないまま声が届くのを防ぐ）。
+	if (store.me.away && micOn) { micOn = false; mutedAt = Date.now(); }
+	applyMicGate();
+	syncMicBtn();
 	if (voiceBusy) return;
-	if (!store.myId || !store.ws || store.ws.readyState !== WebSocket.OPEN) return;  // 接続待ち
+	if (!isConnected()) return;  // 接続待ち
 	voiceBusy = true;
 	try {
-		// 接続が壊れていたら、まず畳む。この下の ensureSession が最初から張り直す。
-		// 畳むのをここでやるのは、通知が来た瞬間に畳むと、実行中の購読処理の足元で
-		// sfuPc が消えてしまうため。
-		if (sfuBroken) { sfuBroken = false; await teardownSfu(); }
-		if (store.me.away || store.budgetLevel === "voice_off") { await teardownSfu(); return; }   // 離席中は接続しない
-		await ensureSession();
-		// micOn のまま接続が張り直された場合はここで付け直す。
-		// micFailed のときに飛ばすのは、400msごとに許可を求め続けないため。
-		if (micOn && !micFailed) await attachMic();
-		const targets = currentTargets();
-		await maybeReleaseMic(targets);
-		await updateSubscriptions(targets);
-		await closePending();
+		await locked(voiceStep);
 	} catch (e) {
 		console.warn("[voice]", e);
 		// publish や購読の途中で失敗すると、送信口や購読が半端に残る。
 		// 次の周期で畳んで張り直させる（そのまま続けると二重に publish される）。
 		sfuBroken = true;
-		// マイクを拒否されたら二度と試さない。放っておくと400msごとに許可を求め続ける。
-		if (e && e.name === "NotAllowedError") {
-			micFailed = true;
-			micOn = false;   // 送るのは諦める。相手の声を受け取るほうは続ける
-			setToolBtn("mic-btn", { on: false, icon: "🚫", label: "マイク不可" });
-		}
 	} finally {
 		voiceBusy = false;
+		applyMicGate();
+		syncMicBtn();
 	}
+}
+
+function isConnected() {
+	return !!store.myId && !!store.ws && store.ws.readyState === WebSocket.OPEN;
+}
+
+// 音声を使ってよい状態か。離席中と、転送量の上限（voice_off）では使わない。
+function voiceAllowed() {
+	return !store.me.away && store.budgetLevel !== "voice_off";
+}
+
+// マイクそのものが原因の失敗か（許可されていない・見つからない・他のアプリが使用中など）。
+// これらは接続を張り直しても直らないので、SFU 側の失敗とは分けて扱う。
+function isDeviceError(e) {
+	return !!e && ["NotAllowedError", "NotReadableError", "NotFoundError", "OverconstrainedError", "AbortError", "SecurityError"].includes(e.name);
+}
+
+async function voiceStep() {
+	// 接続が壊れていたら、まず畳む。この下の ensureSession が最初から張り直す。
+	// 畳むのをここでやるのは、通知が来た瞬間に畳むと、実行中の購読処理の足元で
+	// sfuPc が消えてしまうため。
+	if (sfuBroken) { sfuBroken = false; await teardownNow(); }
+	if (!voiceAllowed()) { await teardownNow(); return; }   // 離席中は接続しない
+	await ensureSession();
+	// micOn のまま接続が張り直された場合はここで付け直す。
+	if (micOn && !micFailed) {
+		try {
+			await attachMic();
+		} catch (e) {
+			if (!isDeviceError(e)) throw e;
+			// マイクが使えないときは送るのを諦め、ボタンも「マイク不可」にする。
+			// 放っておくと400msごとに開こうとし続ける。相手の声を受け取るほうは続ける。
+			console.warn("[voice] mic", e);
+			micFailed = true;
+			micOn = false;
+			applyMicGate();
+		}
+	}
+	const targets = currentTargets();
+	await maybeReleaseMic(targets);
+	await updateSubscriptions(targets);
+	await closePending();
 }
 
 // いま会話すべき相手（エリア内=同エリア / エリア外=近接）。
@@ -128,33 +178,61 @@ async function rtcFetch(path, method, body) {
 	return data;
 }
 
-// マイクを開いて送信口につなぐ。ミュートを解除したときだけ呼ぶ。
+// マイクを開いて送信口につなぐ。必ず locked の中から呼ぶ。
 //
 // 初回は送信口ごと作って全員へ知らせる（publishMic）。2回目以降は replaceTrack で
 // 差し替えるだけなので、SFU との再ネゴは起きない。
 async function attachMic() {
 	mutedAt = 0;
 	if (!localStream) {
-		localStream = await openMic(store.micId);
+		const stream = await openMic(store.micId);
+		localStream = stream;
 		// 代替のマイクで開けた場合は選択を書き直す。
 		// そのままだと、次にミュートを解除したときも同じ exact で失敗し続ける。
-		const got = micIdOf(localStream);
+		const got = micIdOf(stream);
 		if (got && got !== store.micId) { store.micId = got; write(KEY.micId, got); }
+		// マイクが抜かれた・Bluetooth が切れたとき。閉じた扱いにして、次の周期で開き直す。
+		// 放っておくと、ボタンは ON のまま何も送られない状態になる。
+		const t0 = stream.getAudioTracks()[0];
+		if (t0) t0.onended = () => {
+			if (localStream !== stream) return;
+			if (stopMeter) { stopMeter(); stopMeter = null; }
+			setMeter(null);
+			localStream = null;
+			syncMicBtn();
+		};
 		startMeter();
 	}
-	setMicEnabled(true);   // ミュートで送信を止めてあるので戻す
+	// マイクを開いている間（1〜2秒かかることがある）にミュートされていたら、
+	// ここで送信を止めたままにする。無条件に有効化すると「ボタンはミュートなのに
+	// 声が届く」状態になる。
+	applyMicGate();
 	const track = localStream.getAudioTracks()[0];
-	if (!track) return;
+	if (!track || !sfuPc) return;
 	if (!sfuPublished) await publishMic(track);
-	else if (micSender) await micSender.replaceTrack(track);
+	else if (micSender && micSender.track !== track) await micSender.replaceTrack(track);
+	applyMicGate();
 }
 
-// 送信だけを止める／再開する。デバイスの開閉とは別物。
-// enabled = false はデバイスを閉じないので、Bluetooth の切り替えを起こさずに
-// 相手へ一切届かなくできる。
-function setMicEnabled(on) {
+// 送信してよいかを、ボタンの状態（micOn）と離席・転送量の状態から決めてトラックへ反映する。
+// デバイスの開閉とは別物。enabled = false はデバイスを閉じないので、Bluetooth の
+// 切り替えを起こさずに相手へ一切届かなくできる。
+//
+// 「ボタンがミュートなら必ず送らない」をここ1か所で保証する。micOn や離席の状態を
+// 変えたあと、および await のあとには必ず呼ぶこと。
+function applyMicGate() {
 	if (!localStream) return;
+	const on = micOn && voiceAllowed();
 	for (const t of localStream.getAudioTracks()) t.enabled = on;
+}
+
+// 自分の声が実際に SFU へ流れているか。ボタンの「ON」はこれが true のときだけ出す。
+function micLive() {
+	if (!micOn || !localStream || !sfuPc || !sfuPublished || !micSender) return false;
+	const t = localStream.getAudioTracks()[0];
+	if (!t || t.readyState !== "live" || !t.enabled || micSender.track !== t) return false;
+	const st = sfuPc.connectionState;   // 未対応のブラウザでは undefined
+	return st === undefined || st === "connected";
 }
 
 // マイクを本当に閉じる。Bluetooth はここで高音質モードへ戻る。
@@ -226,11 +304,30 @@ async function publishMic(track) {
 function watchConnection(pc) {
 	pc.onconnectionstatechange = () => {
 		if (pc !== sfuPc) return;   // すでに差し替わっている
+		syncMicBtn();               // つながった／切れたをすぐボタンに出す
 		const st = pc.connectionState;
 		if (st === "failed") { sfuBroken = true; return; }
 		// disconnected は一時的に出ることがあるので、続いていたときだけ壊れたとみなす
 		if (st === "disconnected") setTimeout(() => {
 			if (pc === sfuPc && pc.connectionState === "disconnected") sfuBroken = true;
+		}, 5000);
+	};
+}
+
+// 画面共有用の接続の監視。壊れたら共有を止めてボタンを戻す。
+// これが無いと、ネットワークが切り替わったあとも「共有中」のまま映像が止まる。
+function watchScreen(pc) {
+	const fail = () => {
+		if (pc !== screenPc) return;
+		stopScreen();
+		notice("接続が切れたため、画面共有を停止しました。もう一度共有するにはボタンを押してください。");
+	};
+	pc.onconnectionstatechange = () => {
+		if (pc !== screenPc) return;
+		const st = pc.connectionState;
+		if (st === "failed") { fail(); return; }
+		if (st === "disconnected") setTimeout(() => {
+			if (pc === screenPc && pc.connectionState === "disconnected") fail();
 		}, 5000);
 	};
 }
@@ -363,82 +460,130 @@ async function renegotiate(remoteDesc) {
 }
 
 // 接続断・離席・転送量上限でSFUを畳む。
-// localStream（マイク）はあえて止めない。止めると再開のたびに
-// ブラウザの許可ダイアログが出て、離席のたびに煩わしくなる。
-export async function teardownSfu() {
-	if (!sfuPc && !sfuPublished) return;
-	if (selfTile) { selfTile.remove(); selfTile = null; }
-	if (screenStream) { for (const t of screenStream.getTracks()) t.stop(); screenStream = null; }
-	if (screenPc) { try { screenPc.close(); } catch { } screenPc = null; }
-	screenSessionId = null;
-	setScreenBtn(false);
+// 外（net.js）から呼ぶときは locked を通し、実行中の周期処理と重ならないようにする。
+export function teardownSfu() {
+	return locked(teardownNow);
+}
+
+// 畳む本体。locked の中から呼ぶ。何も張っていなくてもマイクだけは必ず閉じる
+// （離席中にマイクが開いたまま残らないようにするため）。
+async function teardownNow() {
+	const hadScreen = stopScreenLocal();
 	for (const sub of sfuSubs.values()) {
 		if (sub.audioEl) sub.audioEl.remove();
 		if (sub.videoEl) sub.videoEl.remove();
 	}
-	closeBig();
+	if (sfuSubs.size) closeBig();
 	sfuSubs.clear();
 	// セッションごと消えるので、閉じ損ねの持ち越しも無意味になる（mid は次で振り直し）
 	pendingClose.clear();
-	if (sfuPublished) { try { store.ws.send(JSON.stringify({ t: "unpublish" })); } catch { } sfuPublished = false; }
+	// 音声と画面のどちらかでも送っていたら取り下げを知らせる。
+	// 画面だけ共有していた場合にも送らないと、他の人に止まった画面が残り続ける。
+	if (sfuPublished || hadScreen) { try { store.ws.send(JSON.stringify({ t: "unpublish" })); } catch { } }
+	sfuPublished = false;
 	if (sfuPc) { try { sfuPc.close(); } catch { } sfuPc = null; }
 	sfuSessionId = null;
 	// 離席・転送量の上限・接続の張り直しでここへ来る。いずれもマイクは即座に閉じる。
 	micSender = null;
 	await releaseMic();
+	syncMicBtn();
 }
 
 // ── 画面共有（エリア内外どこでも・SFU） ──
+
+// いま画面共有してよい状態か
+function canShare() {
+	return !store.me.away && store.budgetLevel === "ok" && !!sfuSessionId && isConnected();
+}
+
 async function startScreen() {
+	if (screenStarting || screenStream) return;   // 開始処理中の押し直しで二重に共有しない
 	if (store.me.away) { alert("離席中は画面共有できません"); return; }
 	// 画面共有の publish は音声のセッションIDを一緒に送るので、それが無いと成立しない
 	if (!sfuSessionId) { alert("音声の準備中です。少し待ってから再度お試しください。"); return; }
 	if (store.budgetLevel !== "ok") { alert("転送量の上限に近づいているため、画面共有は停止中です"); return; }
 	if (!store.myId) return;
-	// 画面選択のダイアログはユーザー操作の直後にしか出せないので、
-	// await を挟む前に呼ぶ（先に SFU を用意すると出せなくなる）
-	let stream;
-	try { stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 10 }, audio: false }); } catch { return; }
+
+	// 開始処理の途中で止められた（離席・切断・転送量の上限）ことを検知するための世代。
+	// 途中で進んでいたら、何も送らずに片づけて終わる。
+	const gen = ++screenGen;
+	screenStarting = true;
+	syncScreenBtn();
+	let stream = null, pc = null;
 	try {
+		// 画面選択のダイアログはユーザー操作の直後にしか出せないので、
+		// await を挟む前に呼ぶ（先に SFU を用意すると出せなくなる）
+		try { stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 10 }, audio: false }); } catch { return; }
+		if (gen !== screenGen || !canShare()) throw new Error("cancelled");
 		// 画面送信は専用のセッション/PCで行う（購読用の sfuPc と分離＝SDP衝突を防ぐ）
 		const data = await rtcFetch("/rtc/sessions/new", "POST");
-		screenSessionId = data.sessionId;
-		screenPc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], bundlePolicy: "max-bundle" });
-		screenStream = stream;
-		const track = screenStream.getVideoTracks()[0];
-		const tr = screenPc.addTransceiver(track, { direction: "sendonly" });
-		const offer = await screenPc.createOffer();
-		await screenPc.setLocalDescription(offer);
-		const answer = await rtcFetch(`/rtc/sessions/${screenSessionId}/tracks/new`, "POST", {
+		pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], bundlePolicy: "max-bundle" });
+		const track = stream.getVideoTracks()[0];
+		const tr = pc.addTransceiver(track, { direction: "sendonly" });
+		const offer = await pc.createOffer();
+		await pc.setLocalDescription(offer);
+		const answer = await rtcFetch(`/rtc/sessions/${data.sessionId}/tracks/new`, "POST", {
 			sessionDescription: { type: "offer", sdp: offer.sdp },
 			tracks: [{ location: "local", mid: tr.mid, trackName: `screen-${store.myId}` }],
 		});
-		await screenPc.setRemoteDescription(answer.sessionDescription);
-		store.ws.send(JSON.stringify({ t: "publish", sessionId: sfuSessionId, audio: `mic-${store.myId}`, screenSessionId, screen: `screen-${store.myId}` }));
-		track.onended = () => stopScreen();   // ブラウザの「共有を停止」に追従
+		await pc.setRemoteDescription(answer.sessionDescription);
+		if (gen !== screenGen || !canShare()) throw new Error("cancelled");
+
+		// ここから先は await を挟まない。状態の確定・全員への通知・ボタンの更新を一息に行う。
+		screenStream = stream; screenPc = pc; screenSessionId = data.sessionId;
+		watchScreen(pc);
+		// 音声トラック名は付けない。マイクを publish していない人が付けると、
+		// 存在しない音声を全員が購読しようとし続ける（音声は publishMic が別に知らせる）。
+		store.ws.send(JSON.stringify({ t: "publish", sessionId: sfuSessionId, screenSessionId, screen: `screen-${store.myId}` }));
+		track.onended = () => { if (screenStream === stream) stopScreen(); };   // ブラウザの「共有を停止」に追従
 		// 自分の共有プレビューを自分の画面にも出す（共有できているか確認用）
 		selfTile = addScreenTile();
 		selfTile.classList.add("self");
 		selfTile.title = "自分の共有（クリックで拡大）";
 		selfTile.srcObject = screenStream;
 		selfTile.play?.().catch(() => { });
-		setScreenBtn(true);
 	} catch (e) {
-		console.warn("[screen]", e);
-		if (stream) for (const t of stream.getTracks()) t.stop();
-		if (screenPc) { try { screenPc.close(); } catch { } }
-		screenStream = null; screenPc = null; screenSessionId = null;
-		setScreenBtn(false);
+		if (!e || e.message !== "cancelled") console.warn("[screen]", e);
+		if (screenStream === stream) {
+			stopScreen();   // 確定後に失敗した場合は、通常の停止と同じ後始末をする
+		} else {
+			if (stream) for (const t of stream.getTracks()) t.stop();
+			if (pc) { try { pc.close(); } catch { } }
+		}
+	} finally {
+		screenStarting = false;
+		syncScreenBtn();
 	}
 }
 
-async function stopScreen() {
+// 画面共有を手元で止める（サーバーへは知らせない）。止めたものがあれば true。
+function stopScreenLocal() {
+	screenGen++;   // 開始処理の途中なら、そちらに「止められた」と伝える
+	const had = !!(screenStream || screenPc);
 	if (selfTile) { closeBigIfShowing(selfTile.srcObject); selfTile.remove(); selfTile = null; }
 	if (screenStream) { for (const t of screenStream.getTracks()) t.stop(); screenStream = null; }
 	if (screenPc) { try { screenPc.close(); } catch { } screenPc = null; }   // 専用PCごと閉じる
 	screenSessionId = null;
+	syncScreenBtn();
+	return had;
+}
+
+function stopScreen() {
+	stopScreenLocal();
 	try { store.ws.send(JSON.stringify({ t: "unpublish", kind: "screen" })); } catch { }
-	setScreenBtn(false);
+}
+
+// 数秒で消えるお知らせ。転送量の警告が出ているあいだは、そちらを優先して出さない。
+function notice(text) {
+	const el = document.getElementById("banner");
+	if (!el || store.budgetLevel !== "ok") return;
+	el.textContent = text;
+	el.style.display = "block";
+	clearTimeout(noticeTimer);
+	noticeTimer = setTimeout(() => {
+		noticeTimer = null;
+		if (store.budgetLevel === "ok") { el.style.display = "none"; el.textContent = ""; }
+	}, 8000);
 }
 
 // ── 音量メーター ──
@@ -467,12 +612,33 @@ function micErrorText(err) {
 	return `マイクを使えませんでした（${name}）。もう一度お試しください。`;
 }
 
-function setMicBtn() {
-	setToolBtn("mic-btn", { on: micOn, icon: micOn ? "🎤" : "🔇", label: micOn ? "ON" : "ミュート中" });
+// マイクボタンを実際の状態に合わせる。
+//
+// 「ON」と出すのは、声が本当に SFU へ流れているとき（micLive）だけ。
+// 利用者は ON にしたつもりでも、接続中・離席中・停止中は別の表示にして、
+// ボタンと実際の送信状況が食い違わないようにする。
+function syncMicBtn() {
+	let v;
+	if (!micOn) v = micFailed ? { on: false, icon: "🚫", label: "マイク不可" } : { on: false, icon: "🔇", label: "ミュート中" };
+	else if (micLive()) v = { on: true, icon: "🎤", label: "ON" };
+	else if (store.me.away) v = { on: false, icon: "🔇", label: "離席中" };
+	else if (store.budgetLevel === "voice_off") v = { on: false, icon: "🔇", label: "停止中" };
+	else v = { on: false, icon: "⏳", label: "接続中…" };
+	const key = `${v.on}|${v.icon}|${v.label}`;
+	if (key === micBtnKey) return;
+	micBtnKey = key;
+	setToolBtn("mic-btn", v);
 }
 
-function setScreenBtn(active) {
-	setToolBtn("screen-btn", { on: active, icon: "🖥️", label: active ? "共有中" : "画面共有" });
+// 画面共有ボタンを実際の状態に合わせる。「共有中」は送信用の接続と映像が生きているときだけ。
+function syncScreenBtn() {
+	const t = screenStream && screenStream.getVideoTracks()[0];
+	const live = !!(screenPc && t && t.readyState === "live");
+	const v = screenStarting ? { on: false, label: "準備中…" } : { on: live, label: live ? "共有中" : "画面共有" };
+	const key = `${v.on}|${v.label}`;
+	if (key === screenBtnKey) return;
+	screenBtnKey = key;
+	setToolBtn("screen-btn", { on: v.on, icon: "🖥️", label: v.label });
 }
 
 // ツールバーのボタン状態を更新。office.html の .ic（アイコン）と .lb（ラベル）に対応。
@@ -520,11 +686,14 @@ function closeBigIfShowing(stream) {
 export function applyBudget() {
 	const b = document.getElementById("screen-btn");
 	if (b) b.disabled = store.budgetLevel !== "ok";
-	if (store.budgetLevel !== "ok" && screenStream) stopScreen();
+	if (store.budgetLevel !== "ok" && (screenStream || screenStarting)) stopScreen();
+	applyMicGate();   // voice_off になった瞬間に送信を止める（畳むのは次の updateVoice）
+	syncMicBtn();
 
 	const el = document.getElementById("banner");
 	if (!el) return;
 	if (store.budgetLevel === "ok") {
+		if (noticeTimer) return;   // 一時的なお知らせを表示中なら消さない
 		el.style.display = "none";
 		el.textContent = "";
 	} else {
@@ -544,23 +713,38 @@ export function initVoiceUI() {
 				micOn = false;
 				// 送信はこの場で止める。デバイスを閉じるまで待つと、その間ずっと
 				// 相手に声が届いてしまう（近くに人がいると猶予は30秒）。
-				setMicEnabled(false);
+				applyMicGate();
 				mutedAt = Date.now();   // デバイスを閉じるのは updateVoice（猶予を毎回見直す）
-				setMicBtn();
+				syncMicBtn();
 				return;
 			}
-			// Bluetooth だと開くのに1〜2秒かかることがあるので、待っていることを見せる
+			if (store.me.away) { alert("離席中はマイクを使えません。着席してからお試しください。"); return; }
+			if (store.budgetLevel === "voice_off") { alert("転送量の上限に達したため、音声は停止中です。"); return; }
+			// 先に意思（micOn）だけ立てる。ボタンは実際に流れ始めるまで「接続中…」になる。
+			// Bluetooth だと開くのに1〜2秒かかることがある。
 			micFailed = false;   // 手で押し直したときは、もう一度試す
-			setToolBtn("mic-btn", { label: "準備中…" });
+			micOn = true;
+			syncMicBtn();
 			try {
-				await attachMic();
-				micOn = true;
+				await locked(async () => {
+					// 待っているあいだにミュートへ戻された・離席した場合は何もしない。
+					// サーバーとまだつながっていない場合も、ここでは開かない
+					// （つながり次第 updateVoice が micOn を見て付ける）。
+					if (!micOn || !voiceAllowed() || !isConnected()) return;
+					await ensureSession();
+					await attachMic();
+				});
 			} catch (err) {
+				console.warn("[voice] unmute", err);
 				micOn = false;
+				applyMicGate();
 				mutedAt = Date.now();   // 開いたまま失敗した場合に閉じられるようにする
+				if (isDeviceError(err)) micFailed = true;
+				else sfuBroken = true;   // 送信口が半端に残るので、次の周期で畳んで張り直す
 				alert(micErrorText(err));
 			}
-			setMicBtn();
+			applyMicGate();
+			syncMicBtn();
 		});
 	}
 
@@ -586,7 +770,7 @@ export function initVoiceUI() {
 
 	const screenBtn = document.getElementById("screen-btn");
 	if (screenBtn) {
-		screenBtn.addEventListener("click", () => { if (screenStream) stopScreen(); else startScreen(); });
+		screenBtn.addEventListener("click", () => { if (screenStarting) return; if (screenStream) stopScreen(); else startScreen(); });
 	}
 	const big = document.getElementById("share-big");
 	if (big) big.addEventListener("click", closeBig);   // 拡大表示はクリックで閉じる

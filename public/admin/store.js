@@ -43,5 +43,7 @@ export const store = {
 	erase: false,           // 消去モードか（対象＝target を消す）
 	showAll: true,          // 入室時は全体表示（壁・敷物・床・コメントを表示、グリッド非表示）
 	autoSave: false,        // 既定は手動保存
-	dirty: false,           // 手動保存モードで未保存の変更があるか
+	dirty: false,           // 未保存の変更があるか
+	saveFailed: false,      // 直近の保存が失敗したか（成功するまで表示に残す）
+	rev: 0,                 // 編集のたびに増える。保存中に入った編集を見落とさないために使う
 };

@@ -1,6 +1,6 @@
 // サイドバーの操作：編集対象タブ・消去・表示切替・保存モード・反映・タイル選択モーダル・状態表示。
 import { store, CATEGORIES, FURNITURE } from "./store.js";
-import { saveLayout, saveZones, saveComments, saveFurniture, loadWebhook, saveWebhook } from "./data.js";
+import { saveLayout, saveZones, saveComments, saveFurniture, loadWebhook, saveWebhook, loadFailed } from "./data.js";
 
 let redraw = () => { };   // キャンバス再描画（main から editor.draw を受け取る）
 
@@ -84,29 +84,49 @@ function toggleShowAll() {
 	}
 	refresh();   // タブのハイライト・状態表示・保存UIもまとめて更新
 }
+// 4種類まとめて保存する。全部成功したら true。
+// 1つでも失敗したら「未保存」のままにして、画面に失敗を出す。
+async function saveAll() {
+	if (loadFailed.size) { updateSaveUI(); return false; }
+	const rev = store.rev;
+	const results = await Promise.all([saveLayout(), saveZones(), saveComments(), saveFurniture()]);
+	const ok = results.every(Boolean);
+	store.saveFailed = !ok;
+	store.dirty = !ok || store.rev !== rev;   // 保存中に入った編集は未保存のまま残す
+	updateSaveUI();
+	return ok;
+}
+
+// 自動保存の結果を画面へ反映する（editor.js の afterEdit から使う）。
+export async function trackSave(promise) {
+	const ok = await promise;
+	if (!ok) { store.dirty = true; store.saveFailed = true; }
+	updateSaveUI();
+	return ok;
+}
+
 function toggleSaveMode() {
 	store.autoSave = !store.autoSave;
-	if (store.autoSave && store.dirty) { saveLayout(); saveZones(); saveComments(); saveFurniture(); store.dirty = false; }
+	if (store.autoSave && store.dirty) saveAll();
 	updateSaveUI();
 }
 function saveNow() {
-	saveLayout(); saveZones(); saveComments(); saveFurniture(); store.dirty = false; updateSaveUI();
+	saveAll();
 }
 async function reflect() {
 	const btn = document.getElementById("reflect-tool");
 	if (btn) btn.disabled = true;
 	try {
-		await saveLayout();
-		await saveZones();
-		await saveComments();
-		await saveFurniture();
-		store.dirty = false;
-		updateSaveUI();
-		await fetch("/api/refresh", { method: "POST" });   // 利用者に再取得を通知
+		// 保存できなかったときは通知しない（利用者に古い内容を取り直させるだけになる）
+		if (!(await saveAll())) return;
+		const res = await fetch("/api/refresh", { method: "POST" });   // 利用者に再取得を通知
+		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 	} catch (e) {
 		console.warn("反映失敗", e);
+		alert("保存はできましたが、利用者への反映に失敗しました。もう一度お試しください。");
 	} finally {
 		if (btn) btn.disabled = false;
+		updateSaveUI();
 	}
 }
 
@@ -115,9 +135,19 @@ export function updateSaveUI() {
 	const modeBtn = document.getElementById("savemode-tool");
 	if (modeBtn) modeBtn.textContent = store.autoSave ? "保存モード：自動" : "保存モード：手動";
 	const st = document.getElementById("save-state");
-	if (st) { st.textContent = store.dirty ? "● 未保存の変更" : "保存済み"; st.classList.toggle("dirty", store.dirty); }
+	// 読み込みに失敗しているあいだは保存させない（空のデータで上書きしないため）
+	const blocked = loadFailed.size > 0;
+	if (st) {
+		st.textContent = blocked ? "● 読み込みに失敗しました。保存はできません。ページを再読み込みしてください"
+			: store.saveFailed ? "● 保存に失敗しました。「保存」を押してやり直してください"
+			: store.dirty ? "● 未保存の変更" : "保存済み";
+		st.classList.toggle("dirty", blocked || store.saveFailed || store.dirty);
+	}
 	const saveBtn = document.getElementById("save-tool");
-	if (saveBtn) saveBtn.disabled = store.autoSave || !store.dirty;
+	// 自動保存中は通常押せないが、保存に失敗したときだけはやり直せるようにする
+	if (saveBtn) saveBtn.disabled = blocked || !store.dirty || (store.autoSave && !store.saveFailed);
+	const reflectBtn = document.getElementById("reflect-tool");
+	if (reflectBtn && blocked) reflectBtn.disabled = true;
 	const showBtn = document.getElementById("showall-tool");
 	if (showBtn) showBtn.classList.toggle("active", store.showAll);
 }
