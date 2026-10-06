@@ -46,11 +46,49 @@ export function update(dt) {
 	store.me.moving = true;
 	store.me.dir = faceDir(dx, dy);
 	const len = Math.hypot(dx, dy);   // 斜めでも速さを一定に
-	// 軸ごとに判定して、壁沿いに滑れるようにする
-	const nx = Math.max(0, Math.min(WORLD.w, store.me.x + (dx / len) * SPEED * dt));
-	if (!isBlocked(nx, store.me.y)) store.me.x = nx;
+	// 軸ごとに判定して、壁沿いに滑れるようにする。
+	// 横はマップの端から体の半分だけ内側までにする（体が半分マップの外へ出ないように）。
+	const nx = Math.max(BODY_HALF, Math.min(WORLD.w - BODY_HALF, store.me.x + (dx / len) * SPEED * dt));
+	if (canStep(nx, store.me.y)) store.me.x = nx;
 	const ny = Math.max(0, Math.min(WORLD.h, store.me.y + (dy / len) * SPEED * dt));
-	if (!isBlocked(store.me.x, ny)) store.me.y = ny;
+	if (canStep(store.me.x, ny)) store.me.y = ny;
+	else if (!dx) slideIntoGap(ny, dt);
+}
+
+// 上下にまっすぐ進もうとして、体の端だけが引っかかったときの助け。
+// 足元の点は通れるのに左右どちらかの端だけが通行禁止マスにかかっている場合、
+// かかっていない側へ少しずつ寄せる。これが無いと、1マス幅の通路やドアに入るのに
+// 横位置をぴったり合わせる必要があり（通れる幅は 12px しかない）、何度も切り返すことになる。
+// 横のキーを押しているときは、利用者の操作を優先して何もしない。
+function slideIntoGap(ny, dt) {
+	const x = store.me.x;
+	if (isBlocked(x, ny)) return;   // 正面が塞がっている。寄せても通れない
+	const left = isBlocked(x - BODY_HALF, ny), right = isBlocked(x + BODY_HALF, ny);
+	if (left === right) return;
+	const nx = Math.max(BODY_HALF, Math.min(WORLD.w - BODY_HALF, x + (left ? 1 : -1) * SPEED * dt));
+	if (canStep(nx, store.me.y)) store.me.x = nx;
+}
+
+// 体の横幅の半分（ワールドpx）。アバターの絵のうち、実際に体が描かれている幅に合わせてある。
+// 大きくすると見た目のめり込みは減るが、1マス幅（32px）の通路を通れる位置が狭くなり、
+// 通路に入りにくくなる（通れる幅 = 32 - BODY_HALF×2）。
+export const BODY_HALF = 10;
+
+// 体の幅を考えて、その位置に立てないか。足元の点だけで判定すると、体の横半分が
+// 通行禁止マスに入り込む。左右の端も見ることで、体ごと手前で止まる。
+// 縦方向は足元の点だけで見る。絵は足元から上へ伸びるので、上のマスに頭が重なるのは
+// 「手前に立っている」見た目として自然なため。
+export function isBlockedBody(x, y) {
+	return isBlocked(x, y) || isBlocked(x - BODY_HALF, y) || isBlocked(x + BODY_HALF, y);
+}
+
+// (x, y) へ進めるか。
+// すでに体が通行禁止マスにかかっている場合（この判定が入る前の位置を復元したときや、
+// 管理者がマスを足したとき）は、足元の点が入らない限り動けるようにする。そうしないと、
+// かかっている方向と直角にしか動けず、その場から抜け出しにくくなる。
+function canStep(x, y) {
+	if (!isBlockedBody(x, y)) return true;
+	return isBlockedBody(store.me.x, store.me.y) && !isBlocked(x, y);
 }
 
 // 移動量から向き（up/left/down/right）を決める
