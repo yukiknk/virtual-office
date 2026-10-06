@@ -11,7 +11,7 @@
 // 転送量が増えると、まず画面共有、次に音声の順に止まる（applyBudget）。
 import { store, zoneIdAt } from "./store.js";
 import { GRID } from "../map.js";
-import { openMic, micIdOf, startLevelMeter, startTalkDetector, playTestTone, getSilentTrack } from "../devices.js";
+import { openMic, micIdOf, startLevelMeter, startTalkDetector, getSilentTrack } from "../devices.js";
 import { KEY, write } from "../storage.js";
 
 // エリア外での会話範囲。panel.js と src/config.js にも同じ値がある（変えるときは3か所）。
@@ -34,6 +34,7 @@ const MIC_RELEASE_NEAR_MS = 30_000;    // 近くに人がいる＝また話す�
 // 2 をすぐ行うと、開け直すたびにプロファイルの切り替えが起きて話し出しが欠ける。
 let localStream = null;       // 開いているマイク。null なら閉じている
 let micOn = false;            // ミュートを解除しているか（ボタンの状態）
+let micTesting = false;       // 音声の設定でマイクを確認中か。その間はオフィスへ送らない（setMicTest）
 let micFailed = false;        // マイクが使えないとき true（再試行を止める）
 let micSender = null;         // 自分の声を送る口。トラックを差し替えるために持っておく
 let mutedAt = 0;              // ミュートにした時刻。0 ならミュートしていない
@@ -288,7 +289,7 @@ async function attachMic() {
 // 変えたあと、および await のあとには必ず呼ぶこと。
 function applyMicGate() {
 	if (!localStream) return;
-	const on = micOn && voiceAllowed();
+	const on = micOn && voiceAllowed() && !micTesting;
 	for (const t of localStream.getAudioTracks()) t.enabled = on;
 }
 
@@ -727,6 +728,7 @@ function syncMicBtn() {
 	syncTalk();   // マイクの状態が変わる場所は必ずここを通るので、吹き出しも一緒に合わせる
 	let v;
 	if (!micOn) v = micFailed ? { on: false, icon: "🚫", label: "マイク不可" } : { on: false, icon: "🔇", label: "ミュート中" };
+	else if (micTesting) v = { on: false, icon: "🎤", label: "テスト中" };
 	else if (micLive()) v = { on: true, icon: "🎤", label: "ON" };
 	else if (store.me.away) v = { on: false, icon: "🔇", label: "離席中" };
 	else if (store.budgetLevel === "voice_off") v = { on: false, icon: "🔇", label: "停止中" };
@@ -838,6 +840,48 @@ export function applyBudget() {
 }
 
 // ── ボタンの初期化 ──
+// ── 音声の設定（office/audio.js から呼ばれる） ──
+
+// 使うマイクを切り替える。送信中なら、その場で新しいマイクに差し替える。
+// いったん閉じて開き直すので、Bluetooth では1〜2秒ほど音が途切れることがある。
+export async function changeMic(id) {
+	store.micId = id || null;
+	write(KEY.micId, id || "");
+	micFailed = false;   // 選び直したので、もう一度試せるようにする
+	try {
+		await locked(async () => {
+			if (!localStream) return;   // 開いていなければ、次に開くときに新しい指定が使われる
+			await releaseMic();
+			if (micOn && voiceAllowed() && sfuPc) await attachMic();
+		});
+	} catch (e) {
+		console.warn("[voice] change mic", e);
+		reportVoiceError("change", e);
+		if (isDeviceError(e)) { micFailed = true; micOn = false; notice(micLostText(e)); }
+		else sfuBroken = true;
+	}
+	applyMicGate();
+	syncMicBtn();
+}
+
+// 相手の声を出すスピーカーを切り替える。いま再生中の音声にもすぐ反映する。
+// 空文字は「既定のスピーカー」。出力先を選べないブラウザでは何も起きない。
+export function changeSpeaker(id) {
+	store.speakerId = id || null;
+	write(KEY.speakerId, id || "");
+	for (const sub of sfuSubs.values()) {
+		if (sub.audioEl && sub.audioEl.setSinkId) sub.audioEl.setSinkId(id || "").catch(() => { });
+	}
+}
+
+// マイクの確認中は、オフィスへの送信を止める。確認では録音した声をスピーカーから
+// 再生するので、マイクが ON のままだとそれを拾って周りの人へ流してしまう。
+export function setMicTest(on) {
+	micTesting = !!on;
+	applyMicGate();
+	syncMicBtn();
+}
+
 // マイクの状態が外から変わったときに、「マイク不可」の表示を実態に合わせる。
 //   ・デバイスが増減した（ヘッドセットをつなぎ直した等）→ 不可の印を外し、押し直せることを示す
 //   ・ブラウザの許可が変わった → ブロック中は最初から「マイク不可」、許可されたら外す
@@ -922,21 +966,6 @@ export function initVoiceUI() {
 	const resume = () => document.querySelectorAll("audio").forEach((a) => a.play?.().catch(() => { }));
 	window.addEventListener("pointerdown", resume, { once: true });
 	window.addEventListener("keydown", resume, { once: true });
-	// スピーカーの確認音。マイク側の処理には触らないので、会話中に押しても
-	// 接続には影響しない。「相手の声が聞こえない」ときの切り分けに使う。
-	const spkBtn = document.getElementById("spk-test-btn");
-	if (spkBtn) {
-		spkBtn.addEventListener("click", async () => {
-			spkBtn.disabled = true;
-			const routed = await playTestTone(store.speakerId);
-			spkBtn.textContent = routed ? "🔊 鳴らしました" : "🔊 既定のスピーカーで鳴らしました";
-			setTimeout(() => {
-				spkBtn.disabled = false;
-				spkBtn.textContent = "🔊 スピーカーをテスト";
-			}, 2500);
-		});
-	}
-
 	const screenBtn = document.getElementById("screen-btn");
 	if (screenBtn) {
 		screenBtn.addEventListener("click", () => { if (screenStarting) return; if (screenStream) stopScreen(); else startScreen(); });

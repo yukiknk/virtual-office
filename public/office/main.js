@@ -17,6 +17,7 @@ import {
 	updateCallPrompt, updateCallAlert,
 } from "./panel.js";
 import { initAlarm } from "./alarm.js";
+import { initAudioSettings } from "./audio.js";
 
 // 画像シートの読み込みを始める。onload を src より先に設定しないと、
 // キャッシュ済みの画像で完了を取り逃す。
@@ -103,6 +104,7 @@ if (!read(KEY.name)) {
 	initChatUI();
 	initAwayUI();
 	initPeopleUI();
+	initAudioSettings();
 	initRailToggle();   // マップの幅が変わるので、下の fit() より前に済ませる
 	initAlarm();
 

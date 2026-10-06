@@ -98,7 +98,7 @@
 					</button>
 				</div>
 				<!-- スピーカーの確認。voice.js が鳴らす。 -->
-				<button type="button" id="spk-test-btn" class="dock-mini">🔊 スピーカーをテスト</button>
+				<button type="button" id="audio-settings-btn" class="dock-mini">⚙ 音声の設定</button>
 			</div>
 		</aside>
 
@@ -134,6 +134,36 @@
 			</div>
 
 			<!-- 勤務者一覧。表示は scene.js が .open クラスで切り替える。 -->
+			<!-- 音声の設定。マイクとスピーカーの選び直しと確認（office/audio.js）。 -->
+			<div id="audio-modal">
+				<div class="cmodal-box">
+					<div class="cmodal-head">音声の設定</div>
+
+					<label class="cfield">
+						<span class="clabel">マイク</span>
+						<select id="au-mic" class="au-select"></select>
+					</label>
+					<div class="au-row">
+						<button type="button" id="au-mic-test" class="au-btn">マイクをテスト</button>
+						<div class="au-level" id="au-level" hidden><span></span></div>
+					</div>
+					<p id="au-mic-note" class="au-note"></p>
+
+					<label class="cfield">
+						<span class="clabel">スピーカー</span>
+						<select id="au-spk" class="au-select"></select>
+					</label>
+					<div class="au-row">
+						<button type="button" id="au-spk-test" class="au-btn">テスト音を鳴らす</button>
+					</div>
+					<p id="au-spk-note" class="au-note"></p>
+
+					<div class="cmodal-foot">
+						<button type="button" id="au-close">閉じる</button>
+					</div>
+				</div>
+			</div>
+
 			<div id="people-modal">
 				<div class="cmodal-box">
 					<div class="cmodal-head">勤務者一覧</div>

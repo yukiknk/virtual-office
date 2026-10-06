@@ -66,6 +66,89 @@ export function startLevelMeter(stream, onLevel) {
 	return () => { live = false; try { ac.close(); } catch { } };
 }
 
+// ── マイクの確認（録音して、自分の声を聞く） ──
+// 入室画面（login.js）とオフィスの音声の設定（office/audio.js）で同じ確認をするための共通処理。
+//
+// 話している最中の声をそのままスピーカーへ返すと、イヤホンを使っていない人でハウリングする。
+// いったん録音し、録り終えてから再生する。
+//
+// 進み具合は onPhase(段階, 補足) で知らせる。画面に出す文言は micTestText で作れる。
+//   opening   … マイクを開いている
+//   opened    … 開けた（補足は開いたストリーム。実際に開いたデバイスを知りたいとき用）
+//   recording … 録音中
+//   playing   … 再生中
+//   meter     … 録音できないブラウザ。音量のバーだけで確認してもらう（止めるまで続く）
+//   ok / silent / playfail / error … 終わり（error の補足はエラー名）
+// 戻り値を呼ぶと中止して片づける（そのときは onPhase を呼ばない）。
+export const MIC_TEST_MS = 4000;   // 録音する長さ
+
+export function startMicLoopTest({ micId, speakerId, onLevel, onPhase }) {
+	let live = true;
+	let stream = null, stopMeter = null, player = null, timer = null;
+	const closeMic = () => {
+		if (stopMeter) { stopMeter(); stopMeter = null; }
+		if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+	};
+	const stop = () => {
+		if (!live) return;
+		live = false;
+		clearTimeout(timer);
+		closeMic();
+		if (player) { try { player.pause(); URL.revokeObjectURL(player.src); } catch { } player = null; }
+	};
+	const end = (phase, detail) => { stop(); onPhase(phase, detail); };
+
+	(async () => {
+		onPhase("opening");
+		let s;
+		try { s = await openMic(micId); }
+		catch (err) { if (live) end("error", (err && err.name) || "Error"); return; }
+		if (!live) { s.getTracks().forEach((t) => t.stop()); return; }   // 開いている間に中止された
+		stream = s;
+		let peak = 0;
+		stopMeter = startLevelMeter(stream, (v) => { peak = Math.max(peak, v); onLevel(v); });
+		onPhase("opened", stream);
+
+		if (!window.MediaRecorder) { onPhase("meter"); return; }
+
+		onPhase("recording");
+		const chunks = [];
+		const rec = new MediaRecorder(stream);
+		rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+		rec.onstop = async () => {
+			if (!live) return;
+			closeMic();   // 再生の前にマイクを閉じる（Bluetooth が高音質に戻る）
+			if (peak < LEVEL_OK) { end("silent"); return; }
+			onPhase("playing");
+			player = new Audio(URL.createObjectURL(new Blob(chunks, { type: rec.mimeType })));
+			// 選んだスピーカーから出す（対応していないブラウザでは既定のスピーカーになる）
+			if (speakerId && player.setSinkId) { try { await player.setSinkId(speakerId); } catch { } }
+			if (!live) return;
+			player.onended = () => { if (live) end("ok"); };
+			player.play().catch(() => { if (live) end("playfail"); });
+		};
+		rec.start();
+		timer = setTimeout(() => { if (live && rec.state === "recording") rec.stop(); }, MIC_TEST_MS);
+	})();
+
+	return stop;
+}
+
+// 確認の段階ごとに画面へ出す文言。cls は "ok" / "ng" / ""（色分け用）。
+export function micTestText(phase, detail) {
+	switch (phase) {
+		case "opening": return { text: "マイクを開いています…", cls: "" };
+		case "recording": return { text: `話してください（${MIC_TEST_MS / 1000}秒間録音して、そのあと再生します）`, cls: "" };
+		case "playing": return { text: "再生しています…", cls: "" };
+		case "meter": return { text: "話してみてください。バーが動けばマイクは拾えています", cls: "" };
+		case "ok": return { text: "自分の声が聞こえましたか？聞こえない場合は、マイクかスピーカーを選び直してください", cls: "ok" };
+		case "silent": return { text: "音を拾えていませんでした。別のマイクを選んでみてください", cls: "ng" };
+		case "playfail": return { text: "再生できませんでした", cls: "ng" };
+		case "error": return { text: `マイクを開けませんでした（${detail || "Error"}）`, cls: "ng" };
+		default: return null;   // opened など、文言を変えない段階
+	}
+}
+
 // 話しているかどうかを検出し、変わったときだけ onTalk(true/false) を呼ぶ。戻り値を呼ぶと止まる。
 //
 // startLevelMeter とは別にしてあるのは、あちらが requestAnimationFrame で動くため。

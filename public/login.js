@@ -6,7 +6,7 @@
 
 import { getAvatar, initAvatarUI } from "./avatar-ui.js";
 import { KEY, read, write, writeJson } from "./storage.js";
-import { openMic, micIdOf, startLevelMeter, playTestTone, LEVEL_OK } from "./devices.js";
+import { micIdOf, playTestTone, startMicLoopTest, micTestText } from "./devices.js";
 
 const form = document.getElementById("gateform");
 const nm = document.getElementById("nm");
@@ -98,44 +98,36 @@ form.addEventListener("submit", (e) => {
 });
 
 // ── マイクテスト ──
-// 再生はしない。自分の声をスピーカーへ出すと、イヤホンを使っていない人で
-// ハウリングする。拾えているかはメーターで分かる。
-let testStream = null;
-let stopMeter = null;
-let silentSince = 0;
+// 4秒間録音して、そのあと自分の声を再生する。話している最中の声をそのまま返すと、
+// イヤホンを使っていない人でハウリングするため、録り終えてから鳴らす。
+// 本体は devices.js の startMicLoopTest（オフィスの音声の設定と共通）。
+let stopTest = null;   // 実行中のテストを止める関数。null ならテストしていない
 
-async function startMicTest() {
+function startMicTest() {
 	stopMicTest();
-	setMicNote("マイクを開いています…", "");
-	try {
-		testStream = await openMic(micSel.value);
-	} catch (err) {
-		setMicNote(`マイクを開けませんでした（${(err && err.name) || "Error"}）`, "ng");
-		return;
-	}
-	// 代替で開けた場合は、実際に開いたデバイスへ選択を合わせる
-	const got = micIdOf(testStream);
-	if (got && [...micSel.options].some((o) => o.value === got)) micSel.value = got;
-
 	micTestBtn.textContent = "テストを終了";
-	micLevel.hidden = false;
-	setMicNote("話してみてください", "");
-	silentSince = Date.now();
-	stopMeter = startLevelMeter(testStream, (v) => {
-		micLevel.firstElementChild.style.width = Math.round(v * 100) + "%";
-		if (v >= LEVEL_OK) {
-			silentSince = Date.now();
-			setMicNote("マイクは正常です", "ok");
-		} else if (Date.now() - silentSince > 5000) {
-			setMicNote("音を拾えていません。別のマイクを選んでみてください", "ng");
-		}
+	stopTest = startMicLoopTest({
+		micId: micSel.value,
+		speakerId: spkSel.value,
+		onLevel: (v) => { micLevel.firstElementChild.style.width = Math.round(v * 100) + "%"; },
+		onPhase: (phase, detail) => {
+			if (phase === "opened") {
+				// 代替で開けた場合は、実際に開いたデバイスへ選択を合わせる
+				const got = micIdOf(detail);
+				if (got && [...micSel.options].some((o) => o.value === got)) micSel.value = got;
+				micLevel.hidden = false;
+			}
+			if (phase === "playing") micLevel.hidden = true;
+			if (["ok", "silent", "playfail", "error"].includes(phase)) stopMicTest();   // 片づけてから結果を出す
+			const t = micTestText(phase, detail);
+			if (t) setMicNote(t.text, t.cls);
+		},
 	});
 }
 
 // マイクを確実に閉じる。開いたままにすると Bluetooth が低音質のままになる。
 function stopMicTest() {
-	if (stopMeter) { stopMeter(); stopMeter = null; }
-	if (testStream) { testStream.getTracks().forEach((t) => t.stop()); testStream = null; }
+	if (stopTest) { stopTest(); stopTest = null; }
 	if (micTestBtn) micTestBtn.textContent = "マイクをテスト";
 	if (micLevel) micLevel.hidden = true;
 	setMicNote("", "");
@@ -147,7 +139,7 @@ function setMicNote(text, cls) {
 	micNote.className = cls ? `test-note ${cls}` : "test-note";
 }
 
-if (micTestBtn) micTestBtn.addEventListener("click", () => { if (testStream) stopMicTest(); else startMicTest(); });
+if (micTestBtn) micTestBtn.addEventListener("click", () => { if (stopTest) stopMicTest(); else startMicTest(); });
 if (micSel) micSel.addEventListener("change", stopMicTest);   // 選び直したら仕切り直し
 
 // ── スピーカーテスト ──
