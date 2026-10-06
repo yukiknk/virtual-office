@@ -185,6 +185,7 @@ async function voiceStep() {
 			micFailed = true;
 			micOn = false;
 			applyMicGate();
+			notice(micLostText(e));
 		}
 	}
 	await maybeReleaseMic(targets);
@@ -685,10 +686,36 @@ function micErrorText(err, stage = "") {
 	// マイクを開く段階以外の失敗は、マイクの問題ではなく接続側の問題。
 	// マイク向けの案内（許可してください等）を出すと、利用者が見当違いの対処をしてしまう。
 	if (stage && stage !== "open") return `音声の接続に失敗しました（${STAGE_LABEL[stage] || stage}：${name}）。少し待ってから、もう一度お試しください。`;
-	if (name === "NotAllowedError") return "マイクの使用が許可されていません。アドレスバーの鍵アイコンからマイクを「許可」にしてください。";
+	if (name === "NotAllowedError") return blockedText();
 	if (name === "NotReadableError") return "マイクを他のアプリが使っています。Teams や Zoom を閉じてから、もう一度お試しください。";
-	if (name === "NotFoundError" || name === "OverconstrainedError") return "選んだマイクが見つかりません。一度退出して、入室画面でマイクを選び直してください。";
+	// 保存してあるマイクが無ければ既定のマイクで開き直している（devices.js の openMic）。
+	// それでもこのエラーになるのは、使えるマイクが1つも見つからないとき。
+	if (name === "NotFoundError" || name === "OverconstrainedError") return "マイクが見つかりません。ヘッドセットやイヤホンの接続を確認してから、もう一度マイクボタンを押してください。";
 	return `マイクを使えませんでした（${name}）。もう一度お試しください。`;
+}
+
+// マイクがブロックされているときの案内。
+// いちど「ブロック」にすると、ブラウザはもう許可を聞いてこない。ボタンを押し直しても
+// 直らないので、設定を変える手順を具体的に書く。Mac は OS 側にも許可の設定があり、
+// そこが切れていると同じエラーになるので、あわせて案内する。
+function blockedText() {
+	const mac = /Mac/i.test(navigator.userAgent);
+	return "マイクがブロックされています。次の手順で許可してください。\n\n"
+		+ "1. アドレスバーの左端にあるアイコン（サイト情報）を押す\n"
+		+ "2. 「マイク」を「許可」にする\n"
+		+ "3. ページを再読み込みする"
+		+ (mac ? "\n\nそれでも使えない場合は、Mac の「システム設定」→「プライバシーとセキュリティ」→「マイク」で、このブラウザがオンになっているか確認してください。" : "");
+}
+
+// 自動の付け直しでマイクが使えなかったときに、画面上部へ出す短い案内。
+// ボタンを押した結果ではないのでアラートは出さないが、黙って「マイク不可」にすると
+// 本人が理由に気づけない（話しているつもりで、声が届いていない状態になる）。
+function micLostText(err) {
+	const name = (err && err.name) || "Error";
+	if (name === "NotFoundError" || name === "OverconstrainedError") return "マイクが見つからなくなったため、ミュートにしました。ヘッドセットの接続を確認して、マイクボタンを押し直してください。";
+	if (name === "NotAllowedError") return "マイクがブロックされているため、ミュートにしました。マイクボタンを押すと、許可の手順を表示します。";
+	if (name === "NotReadableError") return "マイクをほかのアプリが使っているため、ミュートにしました。マイクボタンを押し直してください。";
+	return `マイクを使えなくなったため、ミュートにしました（${name}）。マイクボタンを押し直してください。`;
 }
 
 // マイクボタンを実際の状態に合わせる。
@@ -811,7 +838,27 @@ export function applyBudget() {
 }
 
 // ── ボタンの初期化 ──
+// マイクの状態が外から変わったときに、「マイク不可」の表示を実態に合わせる。
+//   ・デバイスが増減した（ヘッドセットをつなぎ直した等）→ 不可の印を外し、押し直せることを示す
+//   ・ブラウザの許可が変わった → ブロック中は最初から「マイク不可」、許可されたら外す
+// どちらも印を外すだけで、自動でマイクを ON にはしない（本人の操作なしに声を送らない）。
+function watchMicAvailability() {
+	const clear = () => { if (micFailed && !micOn) { micFailed = false; syncMicBtn(); } };
+	try { navigator.mediaDevices.addEventListener("devicechange", clear); } catch { }
+	try {
+		navigator.permissions.query({ name: "microphone" }).then((st) => {
+			const apply = () => {
+				if (st.state === "denied") { if (!micOn) { micFailed = true; syncMicBtn(); } }
+				else clear();
+			};
+			apply();
+			st.onchange = apply;
+		}).catch(() => { });   // 対応していないブラウザでは何もしない（押したときのエラーで分かる）
+	} catch { }
+}
+
 export function initVoiceUI() {
+	watchMicAvailability();
 	const micBtn = document.getElementById("mic-btn");
 	if (micBtn) {
 		micBtn.addEventListener("click", async () => {
