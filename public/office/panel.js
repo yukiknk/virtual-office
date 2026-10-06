@@ -498,9 +498,8 @@ export function initRailToggle() {
 		const input = document.getElementById("chat-input");
 		if (input) input.focus();
 	});
-	// 前回の状態を引き継ぐ。初めての人は、ウィンドウが狭ければ畳んだ状態から始める。
-	const saved = read(KEY.rail, "");
-	apply(saved ? saved === "1" : window.innerWidth < 900, false);
+	// 前回の状態を引き継ぐ。初めての人（保存された値が無い人）は、開いた状態から始める。
+	apply(read(KEY.rail, "") === "1", false);
 }
 
 // 畳んでいる間に届いたチャットの数。チャットを開くボタンの右上に出す。
