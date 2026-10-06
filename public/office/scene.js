@@ -8,7 +8,7 @@ import { GRID, WORLD, w2s, s2w, setViewport, lookAt, isScrolling, getScale, draw
 import { store, SHEETS, DEFAULT_AVATAR } from "./store.js";
 import { sendComment, removeComment } from "./net.js";
 import { layerImg, drawAvatar } from "../avatar.js";
-import { faceDir, isBlocked } from "./move.js";
+import { faceDir, isBlockedBody, BODY_HALF } from "./move.js";
 import { openCommentModal } from "./panel.js";
 
 const stage = document.getElementById("stage");
@@ -103,9 +103,9 @@ export function initPointer() {
 		if (store.me.away) return;                       // 離席中は移動しない
 		const p = s2w(canvas, e.clientX, e.clientY);
 		for (const c of store.officeComments) if (!isExpired(c) && pointInRect(p, c)) return;   // 看板の上は対象外
-		const x = Math.max(0, Math.min(WORLD.w, p.x));
+		const x = Math.max(BODY_HALF, Math.min(WORLD.w - BODY_HALF, p.x));
 		const y = Math.max(0, Math.min(WORLD.h, p.y));
-		if (isBlocked(x, y)) return;                     // 通行禁止マスには行かない
+		if (isBlockedBody(x, y)) return;                 // 通行禁止マスには行かない（体がかかる位置も不可）
 		store.me.x = x;
 		store.me.y = y;
 	});
@@ -121,7 +121,40 @@ export function fit() {
 	canvas.style.height = h + "px";
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // 以降はCSSピクセル基準で描ける
 	setViewport(w, h, MIN_SCALE);
+	viewW = w; viewH = h;
 	draw();
+}
+
+// ── ラベルを画面の中に収める ──
+// 名前・離席・吹き出しは人の位置を基準に置くので、人がマップの端にいると、ラベルが
+// マップの外（灰色の余白）へはみ出したり、画面の外に出て読めなくなったりする。
+// 「マップが映っている範囲」と「キャンバス」の重なりを求め、その中へ押し戻す。
+let viewW = 0, viewH = 0;   // キャンバスの見た目の大きさ（fit が覚える）
+function labelBounds() {
+	const a = w2s(0, 0), b = w2s(WORLD.w, WORLD.h);
+	const pad = 2;
+	return {
+		l: Math.max(a.x, 0) + pad, t: Math.max(a.y, 0) + pad,
+		r: Math.min(b.x, viewW) - pad, b: Math.min(b.y, viewH) - pad,
+	};
+}
+// 幅 w のものの中心 x を、左右の端に収まるように直す（縦も同じ考え方）
+function fitX(cx, w) {
+	const bd = labelBounds();
+	if (w >= bd.r - bd.l) return (bd.l + bd.r) / 2;   // 範囲より広いときは中央に置く
+	return Math.max(bd.l + w / 2, Math.min(bd.r - w / 2, cx));
+}
+function fitY(cy, h) {
+	const bd = labelBounds();
+	if (h >= bd.b - bd.t) return (bd.t + bd.b) / 2;
+	return Math.max(bd.t + h / 2, Math.min(bd.b - h / 2, cy));
+}
+// 吹き出しを置く。ふだんは名前の右隣、右に入らないときは左隣へ回す。
+// right / left は名前（またはまとまりの一番上の段）の右端と左端、cy はその中央。
+function placeBubble(left, right, cy) {
+	const bw = u(24), gap = u(5);
+	const x = right + gap + bw <= labelBounds().r ? right + gap : left - gap - bw;
+	drawBubbleAt(x, cy);
 }
 
 // 見る場所を決める。マップが画面に収まっているときは何もしない。
@@ -457,9 +490,9 @@ function drawActorLabels(a) {
 	}
 	if (a.group) return;
 	const top = w2s(a.x, labelTopY(a));
-	const w = drawPillAt(top.x, top.y - u(6), a.name, a.color, a.away, false);
-	// 吹き出しは名前の右隣。まとまりのときと同じ位置関係にして、名前とも重ならないようにする
-	if (a.talk && !a.away) drawBubbleAt(top.x + w / 2 + u(5), top.y - u(6));
+	const p = drawPillAt(top.x, top.y - u(6), a.name, a.color, a.away, false);
+	// 吹き出しは名前の隣。まとまりのときと同じ位置関係にして、名前とも重ならないようにする
+	if (a.talk && !a.away) placeBubble(p.cx - p.w / 2, p.cx + p.w / 2, p.cy);
 }
 
 // 名前ラベルを置く高さ（ワールド座標）。画像未読込（丸で代用）のときは丸のすぐ上。
@@ -546,21 +579,28 @@ function drawGroupLabel(g) {
 	for (let i = first; i < n; i += cols) rows.push(ms.slice(i, i + cols));
 
 	const GAP = u(4), ROW = u(PILL_H + 4);
-	const cx = ms.reduce((sum, m) => sum + m.cx, 0) / n;   // 横はまとまりの中央
-	const baseY = Math.min(...ms.map((m) => m.cy));          // 一番下の段を、いちばん上にいる人の頭上に
+	const widthOf = (row) => row.reduce((sum, m) => sum + m.w, 0) + GAP * (row.length - 1);
+	// まとまり全体（いちばん幅の広い段 × 段数）を1つの箱とみなして、画面の中へ収める。
+	// 名前を1つずつ押し戻すと、端で並びが崩れて重なるため、箱ごと動かす。
+	const boxW = Math.max(...rows.map(widthOf));
+	const boxH = (rows.length - 1) * ROW + u(PILL_H);
+	const cx = fitX(ms.reduce((sum, m) => sum + m.cx, 0) / n, boxW);   // 横はまとまりの中央
+	// 一番下の段を、いちばん上にいる人の頭上に。箱の中心に直してから収め、また下の段の位置へ戻す
+	const bottomY = Math.min(...ms.map((m) => m.cy));
+	const baseY = fitY(bottomY - (boxH - u(PILL_H)) / 2, boxH) + (boxH - u(PILL_H)) / 2;
 	const talking = (m) => m.a.talk && !m.a.away;
-	let bubble = null;
+	let topRow = null;
 	rows.forEach((row, r) => {
 		const y = baseY - (rows.length - 1 - r) * ROW;
-		const total = row.reduce((sum, m) => sum + m.w, 0) + GAP * (row.length - 1);
+		const total = widthOf(row);
 		let x = cx - total / 2;
 		for (const m of row) {
 			drawPillAt(x + m.w / 2, y, m.a.name, m.a.color, m.a.away, talking(m));
 			x += m.w + GAP;
 		}
-		if (r === 0) bubble = { x: cx + total / 2 + u(5), y };   // 吹き出しは一番上の段の右
+		if (r === 0) topRow = { left: cx - total / 2, right: cx + total / 2, y };   // 吹き出しは一番上の段の隣
 	});
-	if (ms.some(talking)) drawBubbleAt(bubble.x, bubble.y);
+	if (ms.some(talking)) placeBubble(topRow.left, topRow.right, topRow.y);
 }
 
 // 話している印の吹き出し。x は左端、y は上下の中央（画面座標）。
@@ -594,7 +634,8 @@ function drawBubbleAt(x0, yc) {
 }
 
 // 名前の角丸ラベル。cx / cy は中心（画面座標）。
-// talking が true のときは枠を緑で太くする（まとまりの中で誰が話しているかの印）。幅を返す。
+// talking が true のときは枠を緑で太くする（まとまりの中で誰が話しているかの印）。
+// 画面の外へ出る場合は中へ押し戻し、実際に描いた位置を返す。
 function drawPillAt(cx, cy, name, color, away, talking) {
 	ctx.save();
 	if (away) ctx.globalAlpha = 0.6;
@@ -603,6 +644,8 @@ function drawPillAt(cx, cy, name, color, away, talking) {
 	ctx.textBaseline = "middle";
 	const h = u(PILL_H);
 	const w = ctx.measureText(name).width + u(PILL_PAD) * 2;
+	cx = fitX(cx, w);   // マップの端にいても、名前が外へはみ出さないようにする
+	cy = fitY(cy, h);
 	ctx.shadowColor = "rgba(0,0,0,0.28)"; ctx.shadowBlur = u(4); ctx.shadowOffsetY = 1;
 	ctx.beginPath();
 	ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2);
@@ -614,7 +657,7 @@ function drawPillAt(cx, cy, name, color, away, talking) {
 	ctx.fillStyle = "#141815";
 	ctx.fillText(name, cx, cy + 0.5);
 	ctx.restore();   // font・文字の揃え・globalAlpha はここで呼び出し元の値に戻る
-	return w;        // ラベルの幅。呼び出し元が隣に吹き出しを置くのに使う
+	return { w, cx, cy };   // 実際に描いた位置と幅。呼び出し元が隣に吹き出しを置くのに使う
 }
 
 // 離席バッジ＋理由をアバターの下に表示
@@ -640,8 +683,10 @@ function drawAwayLabel(sx, sy, msg) {
 	const lineH = u(15);
 	const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + u(14);
 	const h = lineH * lines.length + u(3);
-	const cx = sx;
-	const top = sy + u(22) - u(9);   // 1行目の位置は、1行だけのときと変えない。増えた行は下へ伸びる
+	// 1行目の位置は、1行だけのときと変えない。増えた行は下へ伸びる。
+	// マップの端にいて外へはみ出す場合は、中へ押し戻す（下端では、そのぶんアバターに重なる）。
+	const cx = fitX(sx, w);
+	const top = fitY(sy + u(22) - u(9) + h / 2, h) - h / 2;
 	ctx.shadowColor = "rgba(0,0,0,0.25)";
 	ctx.shadowBlur = u(4);
 	ctx.shadowOffsetY = 1;
