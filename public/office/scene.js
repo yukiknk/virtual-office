@@ -623,16 +623,30 @@ function drawAwayLabel(sx, sy, msg) {
 	ctx.font = `600 ${u(11)}px ${LABEL_FAMILY}`;
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
-	// 長い理由は末尾を削って「…」に収める（倍率 1 のとき幅186pxまで）
-	let text = "離席中" + (msg ? "：" + msg : "");
-	while (text.length > 4 && ctx.measureText(text).width > u(186)) text = text.slice(0, -2) + "…";
-	const w = ctx.measureText(text).width + u(14);
-	const h = u(18), cx = sx, cy = sy + u(22);
+	// 理由は最後まで出す。1行に収まらないぶんは折り返して行を足す（理由は最長100文字）。
+	// 以前は1行に切り詰めて「…」にしていたので、長い理由は途中までしか読めなかった。
+	// 折り返しは1文字単位（日本語は単語の区切りが無いため）。
+	const maxW = u(220);
+	const lines = [];
+	let line = "";
+	for (const ch of "離席中" + (msg ? "：" + msg : "")) {
+		if (ch === "\n") { lines.push(line); line = ""; continue; }
+		// 句読点や閉じかっこは行の先頭に送らない（少しはみ出しても前の行に付ける）
+		if (line && !"、。，．）」』】！？".includes(ch) && ctx.measureText(line + ch).width > maxW) { lines.push(line); line = ch; }
+		else line += ch;
+	}
+	lines.push(line);
+
+	const lineH = u(15);
+	const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + u(14);
+	const h = lineH * lines.length + u(3);
+	const cx = sx;
+	const top = sy + u(22) - u(9);   // 1行目の位置は、1行だけのときと変えない。増えた行は下へ伸びる
 	ctx.shadowColor = "rgba(0,0,0,0.25)";
-	ctx.shadowBlur = 4;
+	ctx.shadowBlur = u(4);
 	ctx.shadowOffsetY = 1;
 	ctx.beginPath();
-	ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2);
+	ctx.roundRect(cx - w / 2, top, w, h, Math.min(h / 2, u(9)));
 	ctx.fillStyle = "#4a5046";
 	ctx.fill();
 	// 文字に枠と同じ影が付かないよう、描く前に影を消す
@@ -640,7 +654,7 @@ function drawAwayLabel(sx, sy, msg) {
 	ctx.shadowBlur = 0;
 	ctx.shadowOffsetY = 0;
 	ctx.fillStyle = "#fff";
-	ctx.fillText(text, cx, cy + 0.5);
+	lines.forEach((l, k) => ctx.fillText(l, cx, top + u(1.5) + lineH * (k + 0.5) + 0.5));
 	ctx.restore();
 }
 
