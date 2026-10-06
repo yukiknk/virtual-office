@@ -79,7 +79,7 @@ export default {
     // 静的ファイル（public/ 以下）はここに来る前に assets 設定が返している。
 
     // WebSocket・SFU中継・反映通知は部屋（Durable Object）へ渡す
-    if (url.pathname === "/ws" || url.pathname.startsWith("/rtc/") || url.pathname === "/api/refresh" || url.pathname === "/api/client-errors") {
+    if (url.pathname === "/ws" || url.pathname.startsWith("/rtc/") || url.pathname === "/api/refresh" || url.pathname === "/api/client-errors" || url.pathname === "/api/server-log") {
       const id = env.ROOM.idFromName("main");   // 部屋は1つ（全員同じ）
       return env.ROOM.get(id).fetch(req);
     }

@@ -24,7 +24,7 @@
 //   this.scheduled / this.budget*（消えるが問題ない）
 //     前者は作り直され、後者は ensureBudgetLoaded が storage から読み直す
 
-import { GB, LIMIT_GB, NEAR, CALL_COOLDOWN_MS, LEAVE_GRACE_MS, STALE_MS } from "./config.js";
+import { GB, LIMIT_GB, NEAR, CALL_COOLDOWN_MS, LEAVE_GRACE_MS, STALE_MS, BOOT_GRACE_MS, ROSTER_QUIET_MS } from "./config.js";
 import { json, cleanAvatar, cleanComment, monthKey, levelFor, zoneIdAtWorld, bytesPerSec, readWebhookUrl, escapeSlack } from "./helpers.js";
 
 export class Room {
@@ -41,6 +41,100 @@ export class Room {
     this.callAt = new Map();      // 呼び出しの連打防止。"送信者id>相手id" -> 最後に送った時刻
     this.leaving = new Map();     // 退出通知の待ち。cid -> タイマー
     this.errCount = new Map();    // エラー記録の件数。接続id -> 件数（消えても問題ない）
+
+    // ── 在室者の名簿（Slack 通知の判定専用） ──
+    // 「いま在室している人」を storage にも残しておく。部屋が作り直されると this.leaving などの
+    // メモリ上の記憶が消え、入り直してきた全員が初めて来た人に見えて、人数ぶんの入室通知が
+    // 流れてしまう。名簿が残っていれば、作り直しのあとでも「さっきまでいた人」と分かる。
+    //
+    // 【重要】名簿は通知を出すかどうかの判定にしか使わない。マップ上のアバター・在室者・
+    // 勤務者一覧は、これまでどおり sockets()（いま実際につながっている接続）だけから作る。
+    // 名簿に名前が残っていても、接続が無ければ画面には出ない。表示に使い始めると、
+    // 「退出したのにアバターが残る」が再発するので、絶対に混ぜないこと。
+    this.roster = new Map();      // cid -> { name, at }
+    this.bootAt = Date.now();     // この個体が動き始めた時刻（休眠から起きたときも更新される）
+    this.grace = null;            // 作り直しのあとの待ち { until, quiet }。待っていなければ null
+    this.lastTick = 0;            // 転送量を最後に積んだ時刻（alarm が使う）
+    // 起動の記録と名簿の読み込みが済むまで、ほかの処理を待たせる。
+    this.ctx.blockConcurrencyWhile(() => this.boot());
+  }
+
+  // 起動時に1回だけ走る。名簿を読み込み、起動したことを記録する。
+  //
+  // 「起動」には2種類ある。
+  //   休眠から起きた … 接続は残っている。メモリ上の値が消えただけで、利用者には何も起きていない。
+  //                     全員がタブを裏に置いていると（位置の送信が1分おきになる）、毎分のように起こる。
+  //   作り直された   … 接続が1本も無い。人がいたなら、全員が一斉に切断されたということ。
+  // 記録（boots）に残すのは後者だけ。前者まで残すと、調べたい作り直しの記録が埋もれる。
+  //   roster  … 名簿に残っていた人数。1 以上なら「人がいたのに作り直された」と読める。
+  //   downSec … 最後に動いていた記録（alive）から起動までの秒数。
+  async boot() {
+    try {
+      const saved = (await this.ctx.storage.get("roster")) || {};
+      for (const [cid, v] of Object.entries(saved)) {
+        if (v && typeof v.name === "string") this.roster.set(cid, { name: v.name, at: +v.at || 0 });
+      }
+      const alive = (await this.ctx.storage.get("alive")) || 0;
+      this.lastTick = alive;   // 休眠でメモリから消えても、転送量を続きから積めるようにする
+      const sockets = this.ctx.getWebSockets().length;
+      if (sockets > 0) {
+        // 休眠から起きただけ。作り直しのあとの待ち時間がまだ残っていれば、それを引き継ぐ
+        this.grace = (await this.ctx.storage.get("grace")) || null;
+        return;
+      }
+      const downMs = alive ? Math.max(0, this.bootAt - alive) : 0;
+      const boots = (await this.ctx.storage.get("boots")) || [];
+      boots.push({ at: new Date(this.bootAt).toISOString(), roster: this.roster.size, downSec: alive ? Math.round(downMs / 1000) : null });
+      if (boots.length > 200) boots.splice(0, boots.length - 200);
+      await this.ctx.storage.put("boots", boots);
+      console.log("[boot]", JSON.stringify(boots[boots.length - 1]));
+      if (this.roster.size) {
+        // 名簿に人が残っている。つなぎ直しを待ったあとで照合する（alarm の reconcileRoster）。
+        // 待ち時間を storage にも置くのは、待っている途中で部屋が休眠しても忘れないため。
+        // setTimeout ではなく alarm を使うのも同じ理由（誰も戻ってこないと部屋はすぐ眠る）。
+        this.grace = { until: this.bootAt + BOOT_GRACE_MS, quiet: downMs > ROSTER_QUIET_MS };
+        await this.ctx.storage.put("grace", this.grace);
+        await this.ctx.storage.setAlarm(this.grace.until);
+      }
+    } catch (e) {
+      console.log("[boot] failed", String(e && e.message || e));
+    }
+  }
+
+  // サーバー側で起きた例外の記録。直近30件を storage に残す（/api/server-log で読める）。
+  // 部屋が落ちる直前に何か起きていないかを、あとから調べるためのもの。
+  async logError(where, e) {
+    try {
+      console.log("[error]", where, String(e && e.stack || e));
+      const list = (await this.ctx.storage.get("serverErrors")) || [];
+      list.push({ at: new Date().toISOString(), where, message: String(e && e.message || e).slice(0, 300) });
+      if (list.length > 30) list.splice(0, list.length - 30);
+      await this.ctx.storage.put("serverErrors", list);
+    } catch { }
+  }
+
+  async saveRoster() {
+    await this.ctx.storage.put("roster", Object.fromEntries(this.roster));
+  }
+
+  // 名簿と実際の接続を突き合わせる（alarm から）。
+  // 名簿にいるのに接続が無く、退出通知の待ちにも入っていない人は、部屋の作り直しなどで
+  // 退出を見届けられなかった人。名簿から外し、退出を通知する。
+  // 部屋が作り直された直後は、まだ入り直してくる途中の人がいるので待つ（this.grace）。
+  async reconcileRoster() {
+    if (!this.roster.size) return;
+    if (this.grace && Date.now() < this.grace.until) return;   // まだ入り直してくる途中の人がいる
+    // 長く止まっていたあとの最初の照合では、古い退出を通知しない（何時間も前の話になるため）
+    const quiet = !!(this.grace && this.grace.quiet);
+    let changed = false;
+    for (const [cid, v] of [...this.roster]) {
+      if (this.hasCid(cid, null) || this.leaving.has(cid)) continue;
+      this.roster.delete(cid);
+      changed = true;
+      if (!quiet) await this.notify(`${escapeSlack(v.name)}さんがスペースから退出しました。`);
+    }
+    if (this.grace) { this.grace = null; await this.ctx.storage.delete("grace"); }
+    if (changed) await this.saveRoster();
   }
 
   async fetch(req) {
@@ -49,6 +143,17 @@ export class Room {
     if (url.pathname.startsWith("/rtc/")) return this.handleRtc(req, url);
     if (url.pathname === "/api/refresh") { this.broadcastReload(); return new Response("ok"); }
     if (url.pathname === "/api/client-errors") return json((await this.ctx.storage.get("clientErrors")) || []);
+    // 部屋の起動の記録と、サーバー側で起きた例外。部屋がなぜ・どのくらい作り直されているかを調べる用
+    if (url.pathname === "/api/server-log") {
+      return json({
+        now: new Date().toISOString(),
+        bootAt: new Date(this.bootAt).toISOString(),
+        connected: this.sockets().length,
+        roster: this.roster.size,
+        boots: (await this.ctx.storage.get("boots")) || [],
+        errors: (await this.ctx.storage.get("serverErrors")) || [],
+      });
+    }
     return new Response("Not found", { status: 404 });
   }
 
@@ -187,7 +292,14 @@ export class Room {
     try { msg = JSON.parse(message); } catch { return; }   // 壊れたデータは黙って捨てる
     const att = ws.deserializeAttachment();
     if (!att) return;
+    try {
+      await this.dispatch(ws, att, msg);
+    } catch (e) {
+      await this.logError(`message:${String(msg.t).slice(0, 20)}`, e);
+    }
+  }
 
+  async dispatch(ws, att, msg) {
     if (msg.t === "hello") await this.onHello(ws, att, msg);
     else if (msg.t === "comment_add") await this.onCommentAdd(msg);
     else if (msg.t === "comment_remove") await this.onCommentRemove(msg);
@@ -216,8 +328,9 @@ export class Room {
     // 離席状態もここで受け取る。再接続時に away で送り直させると、そのたびに通知が出る。
     att.away = !!msg.away;
     att.awayMsg = att.away ? String(msg.awayMsg || "").slice(0, 100) : "";
-    // つなぎ直しか：退出通知を待っている最中、または同じ cid の古い接続がまだ残っている
-    const rejoin = this.cancelLeave(att.cid) | this.hasCid(att.cid, att.id);
+    // つなぎ直しか：退出通知を待っている最中、同じ cid の古い接続がまだ残っている、
+    // または名簿に残っている（部屋が作り直されて、上の2つの記憶が消えた場合はこれで分かる）
+    const rejoin = this.cancelLeave(att.cid) | this.hasCid(att.cid, att.id) | this.roster.has(att.cid);
     // 同じタブの古い接続が残っていたら、ここで退かせる。
     // 切断の通知が届かないまま入り直すと（ページの移動のしかたや回線によっては起こる）、
     // 古い接続が生きているように見え、「さっき退出した自分」がオフィスに残ってしまう。
@@ -236,6 +349,10 @@ export class Room {
     await this.ensureComments();
     ws.send(JSON.stringify({ t: "comments", list: this.comments }));   // 入室時に現在のコメントを送る
     this.schedule();
+    // 名簿に載せる（通知の判定専用。表示には使わない）。中身が変わったときだけ保存する
+    const prev = this.roster.get(att.cid);
+    this.roster.set(att.cid, { name: att.name, at: Date.now() });
+    if (!prev || prev.name !== att.name) await this.saveRoster();
     if (first && !rejoin) await this.notify(`${escapeSlack(att.name)}さんがスペースに入室しました。`);
   }
 
@@ -413,6 +530,7 @@ export class Room {
     const timer = setTimeout(async () => {
       this.leaving.delete(cid);
       if (this.hasCid(cid, id)) return;
+      if (this.roster.delete(cid)) await this.saveRoster();
       await this.notify(`${escapeSlack(name)}さんがスペースから退出しました。`);
     }, LEAVE_GRACE_MS);
     this.leaving.set(cid, timer);
@@ -487,9 +605,20 @@ export class Room {
   // 最後に、接続が残っているときだけ次を予約する。誰もいない部屋では
   // アラームが止まり、実行時間も課金されない。次の接続で ensureAlarm が起こし直す。
   async alarm() {
+    try {
+      await this.tick();
+    } catch (e) {
+      await this.logError("alarm", e);
+      // 失敗しても次の周期は予約する（止まったままだと、転送量の積算も名簿の照合も止まる）
+      try { if (this.sockets().length > 0) await this.ctx.storage.setAlarm(Date.now() + 60_000); } catch { }
+    }
+  }
+
+  async tick() {
     await this.ensureBudgetLoaded();
     const sockets = this.sockets();
     this.sweepStale(sockets);
+    await this.reconcileRoster();
 
     const nowMonth = monthKey();
     if (nowMonth !== this.budgetMonth) { this.budgetMonth = nowMonth; this.budgetBytes = 0; }
@@ -505,14 +634,22 @@ export class Room {
       if (!p) continue;   // 位置が分からない人は数えない
       users.push({ id: att.id, x: p.x, y: p.y, audio: !!att.audioTrack, screen: !!att.screenTrack });
     }
-    this.budgetBytes += bytesPerSec(users, zones) * 60;   // 60秒ぶん積算
+    // 前回からの経過時間ぶんを積む。ふだんは60秒おきだが、起動直後の照合のために早く来ることが
+    // あるので、固定の60秒で積むと多く数えてしまう。長く空いた場合は1周期ぶんまでにする
+    // （止まっていたあいだの通信は発生していないため）。
+    const now = Date.now();
+    const elapsed = this.lastTick ? Math.min(60, (now - this.lastTick) / 1000) : 0;
+    this.lastTick = now;
+    this.budgetBytes += bytesPerSec(users, zones) * elapsed;
     await this.ctx.storage.put("budget", { month: this.budgetMonth, bytes: this.budgetBytes });
+    await this.ctx.storage.put("alive", now);   // 「この時刻までは動いていた」の記録（boot が止まっていた時間を測るのに使う）
 
     this.budgetLevel = levelFor(this.budgetBytes);
     const out = JSON.stringify({ t: "budget", level: this.budgetLevel, usedGb: this.usedGb(), limitGb: LIMIT_GB });
     for (const ws of sockets) { try { ws.send(out); } catch { } }
 
-    if (sockets.length > 0) await this.ctx.storage.setAlarm(Date.now() + 60_000);
+    // 名簿に人が残っている間は、接続が 0 でも次を予約する（照合を終えて名簿を空にするため）
+    if (sockets.length > 0 || this.roster.size > 0) await this.ctx.storage.setAlarm(Date.now() + 60_000);
   }
 
   // 応答のない接続を退出扱いにする（alarm から60秒ごと）。
