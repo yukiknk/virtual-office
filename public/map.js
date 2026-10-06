@@ -24,20 +24,53 @@ export const WORLD = { w: COLS * GRID, h: ROWS * GRID };
 // 描く前に必ず setViewport を呼ぶこと。呼ばないと倍率1・余白0のまま描かれる。
 let scale = 1, offX = 0, offY = 0;
 
+// キャンバスの表示上の大きさ（setViewport が覚える）と、マップが収まりきっていないか。
+let viewW = 0, viewH = 0;
+let overflowX = false, overflowY = false;
+
 // キャンバスの表示上の大きさに合わせて倍率と余白を決める。
 // 画面サイズが変わるたびに呼び直す。
 // 渡すのは見た目の大きさで、canvas.width（実ピクセル）ではない。高解像度画面では値が違う。
-export function setViewport(w, h) {
+//
+// minScale を渡すと、倍率をそれより小さくしない。そのぶんマップは画面に収まらなくなるので、
+// 収まらない方向は lookAt で見る場所を動かす（オフィス画面）。渡さなければ、これまでどおり
+// マップ全体が収まる倍率になる（管理者ページ）。
+export function setViewport(w, h, minScale = 0) {
 	const dpr = window.devicePixelRatio || 1;
 	// マップ全体が収まる倍率。横と縦で余る方に余白がつく。
-	const raw = Math.min(w / WORLD.w, h / WORLD.h);
+	const raw = Math.max(Math.min(w / WORLD.w, h / WORLD.h), minScale);
 	// そのまま使うと1マスが実ピクセルの半端な大きさになり、タイルの継ぎ目に
 	// 1点の隙間や重なりが出る。1マスが整数の実ピクセルになる倍率に丸めて防ぐ。
 	const cellDev = Math.max(1, Math.round(GRID * raw * dpr));   // 最低1点（w/h が 0 のとき倍率0になるのを防ぐ）
 	scale = cellDev / (GRID * dpr);
+	viewW = w; viewH = h;
+	overflowX = WORLD.w * scale > w + 0.5;
+	overflowY = WORLD.h * scale > h + 0.5;
 	// 余白も同じ理由で実ピクセルの整数に丸める（丸めた値を画面座標に戻している）。
-	offX = Math.round(((w - WORLD.w * scale) / 2) * dpr) / dpr;
-	offY = Math.round(((h - WORLD.h * scale) / 2) * dpr) / dpr;
+	// 収まらない方向は、とりあえず左上に合わせておく（すぐ lookAt が置き直す）。
+	offX = overflowX ? 0 : Math.round(((w - WORLD.w * scale) / 2) * dpr) / dpr;
+	offY = overflowY ? 0 : Math.round(((h - WORLD.h * scale) / 2) * dpr) / dpr;
+}
+
+// マップが画面に収まっていないとき、ワールド座標 (x, y) が画面の中央に来るように
+// 見る場所を動かす。マップの端より外は見せない（端に近づくと、中央ではなく端に寄る）。
+// 収まっている方向は何もしない（setViewport が中央に置いたまま）。
+export function lookAt(x, y) {
+	const dpr = window.devicePixelRatio || 1;
+	const snap = (v) => Math.round(v * dpr) / dpr;   // 実ピクセルの整数に揃える（タイルの継ぎ目を出さない）
+	if (overflowX) offX = snap(Math.min(0, Math.max(viewW - WORLD.w * scale, viewW / 2 - x * scale)));
+	if (overflowY) offY = snap(Math.min(0, Math.max(viewH - WORLD.h * scale, viewH / 2 - y * scale)));
+}
+
+// マップが画面に収まりきらず、見る場所を動かしている状態か
+export function isScrolling() {
+	return overflowX || overflowY;
+}
+
+// いまの表示倍率。画面座標で大きさを決めるもの（名前ラベルなど）を、マップに合わせて
+// 縮めるために使う。座標の変換には使わないこと（変換は w2s / s2w を通す）。
+export function getScale() {
+	return scale;
 }
 
 // ワールド座標 → 画面座標

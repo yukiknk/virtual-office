@@ -40,6 +40,9 @@
 
 		<!-- 左のメニューバー。中身が空の div は scene.js が後から埋める枠。 -->
 		<aside id="rail">
+			<!-- メニューを細い帯に畳む／元に戻す（panel.js の initRailToggle）。
+			     畳んでもマイク・画面共有・離席は押せるように、アイコンだけを残す。 -->
+			<button type="button" id="rail-toggle" title="メニューを畳む" aria-label="メニューを畳む">«</button>
 			<h2 class="rail-h" data-config="orgName">デモオフィス</h2>
 			<div id="roster"></div>   <!-- 在室者の一覧 -->
 
@@ -60,14 +63,22 @@
 			<!-- 状態を変えないボタン2つを横に並べる。よく使う「看板を作成」に手が届きやすいよう、チャットの下に置く。
 			     離席・退出とは役割が違うので別の行にしてある
 			     （退出の隣に置くと、押し間違えたときに接続が切れる）。 -->
+			<!-- 畳んでいるあいだだけ出る。押すとメニューを開いてチャットの入力欄へ移る。
+			     畳んでいる間に届いたメッセージの数を .badge に出す。 -->
+			<button type="button" id="chat-open-btn" title="チャットを開く">
+				<span class="bi">💬</span><span class="badge" hidden></span>
+			</button>
+
+			<!-- bl は開いているときに出す文字。畳んだときは、絵（bi）か短い文字（bs）に替わる。
+			     2文字で収まるもの（看板・離席・退出）は文字のまま出し、収まらないものだけ絵にしている。 -->
 			<div id="rail-tools">
-				<button type="button" id="people-btn">勤務者一覧</button>
-				<button type="button" id="comment-add-btn">看板を作成</button>
+				<button type="button" id="people-btn" title="勤務者一覧"><span class="bi">👥</span><span class="bl">勤務者一覧</span></button>
+				<button type="button" id="comment-add-btn" title="看板を作成"><span class="bs">看板</span><span class="bl">看板を作成</span></button>
 			</div>
 			<div id="usage"></div>   <!-- 今月の転送量 -->
 			<div id="actions">
-				<button type="button" id="away-btn" class="actbtn">離席</button>
-				<button type="button" id="leave-btn" class="actbtn danger">退出</button>
+				<button type="button" id="away-btn" class="actbtn" title="離席"><span class="bl">離席</span></button>
+				<button type="button" id="leave-btn" class="actbtn danger" title="退出"><span class="bl">退出</span></button>
 			</div>
 
 			<!-- ここ2つだけ voice.js の担当。
@@ -112,10 +123,14 @@
 			<!-- 以下3つは hidden 属性で出し入れする。下のモーダル3つは .open クラス方式。
 			     背景を暗くするフェードが要るものだけ .open にしてある。 -->
 			<div id="call-alert" hidden></div>    <!-- 呼び出しを受けたときのバナー -->
-			<div id="call-prompt" hidden></div>   <!-- 近くの人を呼び出すボタン -->
-			<div id="link-prompt" hidden>         <!-- 看板の中のリンクを開く確認 -->
-				<span class="lp-text" id="link-label"></span>
-				<button type="button" class="lp-open" id="link-open">開く</button>
+			<!-- いまいる場所でできる操作（近くの人の呼び出し・家具のリンク）を、マップの下端に
+			     1本の帯としてまとめて出す。別々に重ねて出すと、人が集まったときにマップを覆ってしまう。 -->
+			<div id="prompts">
+				<div id="call-prompt" hidden></div>   <!-- 近くの人を呼び出すボタン（panel.js が中身を作る） -->
+				<div id="link-prompt" hidden>         <!-- 近くの家具に付いているリンク -->
+					<span class="lp-text" id="link-label"></span>
+					<button type="button" class="lp-open" id="link-open">開く</button>
+				</div>
 			</div>
 
 			<!-- 勤務者一覧。表示は scene.js が .open クラスで切り替える。 -->
@@ -133,7 +148,11 @@
 			<div id="away-modal">
 				<div class="cmodal-box">
 					<div class="cmodal-head">💬 離席中のコメント</div>
+					<!-- 上限の 100 文字はサーバー側（src/room.js の onAway / onHello）でも切っている。
+					     変えるときは、maxlength・下の案内文・サーバーの3か所を合わせること。 -->
 					<textarea id="away-text" rows="3" placeholder="周りの人に状況を伝えましょう" maxlength="100"></textarea>
+					<!-- 上限と残りの文字数。数字は panel.js が入力のたびに書き換える -->
+					<div class="cmodal-note"><span>100文字まで入力できます</span><span id="away-count">0 / 100</span></div>
 					<div class="cmodal-foot">
 						<button type="button" id="away-save" class="primary">更新</button>
 					</div>

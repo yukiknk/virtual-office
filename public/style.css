@@ -4,6 +4,17 @@
 
 body {
 	margin: 0;
+	/* 入室画面（login.css）と同じ書体に揃える。指定しないとブラウザの既定の書体になり、
+	   PC によって明朝体で出たり、文字とボタンで書体が食い違ったりする。 */
+	font-family: 'M PLUS Rounded 1c', system-ui, 'Noto Sans JP', sans-serif;
+}
+
+/* ボタンや入力欄は、既定では周りの書体を引き継がない（OS の書体になる）ので明示する */
+button,
+input,
+select,
+textarea {
+	font-family: inherit;
 }
 
 #admin {
@@ -617,6 +628,23 @@ body {
 	background: rgba(0, 0, 0, 0.35);
 }
 
+/* 入力欄の下に出す補足（上限の案内と、いまの文字数） */
+.cmodal-note {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	margin-top: -8px;
+	font-size: 11px;
+	color: #737a70;
+	font-variant-numeric: tabular-nums;
+}
+
+/* 上限に達したとき */
+.cmodal-note .full {
+	color: #b23a2a;
+	font-weight: 700;
+}
+
 #away-text {
 	width: 100%;
 	box-sizing: border-box;
@@ -874,6 +902,8 @@ body {
 
 #stage {
 	padding: 0px;
+	/* 中の部品が「マップ部分の幅」を基準に大きさを決められるようにする（#prompts の cqw） */
+	container-type: inline-size;
 	overflow: hidden;
 	/* 余計なスクロールをいれなくする */
 	position: relative;
@@ -1166,85 +1196,99 @@ body {
 }
 
 /* ── 家具リンクの「開きますか？」プロンプト（オフィス） ── */
-#link-prompt {
+/* ── いまいる場所でできる操作の帯（呼び出し・家具のリンク） ──
+   マップの下端に1本だけ出す。中身は小さな札（チップ）を横に並べ、入りきらなければ折り返す。
+   文字の大きさはマップ部分の幅に合わせて変える（cqw はマップ部分の幅の 1%）。
+   小さいウィンドウで札だけが大きく残り、マップを覆ってしまうのを防ぐ。 */
+#prompts {
 	position: absolute;
 	left: 50%;
-	bottom: 24px;
+	bottom: 10px;
 	transform: translateX(-50%);
 	z-index: 30;
 	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 6px;
+	width: max-content;
+	max-width: 94%;
+	font-size: 12px;                       /* cqw が使えないブラウザ向け */
+	font-size: clamp(10.5px, 1.5cqw, 13px);
+	/* 帯そのものはクリックを受けない（札の無いところでは、下のマップを触れる） */
+	pointer-events: none;
+}
+
+#prompts > * {
+	pointer-events: auto;
+}
+
+/* 帯の中の1グループ。白い角丸の中に、見出しと札が横に並ぶ */
+#call-prompt,
+#link-prompt {
+	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
-	gap: 12px;
-	padding: 12px 16px;
-	background: #fff;
-	border-radius: 14px;
-	box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
-	max-width: 90%;
+	gap: 0.4em;
+	padding: 0.35em 0.5em;
+	background: rgba(255, 255, 255, 0.94);
+	border-radius: 999px;
+	box-shadow: 0 3px 12px rgba(0, 0, 0, 0.22);
+	max-width: 100%;
+}
+
+/* hidden 属性で確実に隠す（display:flex より優先） */
+#call-prompt[hidden],
+#link-prompt[hidden] {
+	display: none;
+}
+
+/* グループの見出し（「呼び出す」など） */
+.prompt-cap {
+	padding-left: 0.4em;
+	font-size: 0.92em;
+	font-weight: 700;
+	color: #5c6359;
+	white-space: nowrap;
 }
 
 #link-prompt .lp-text {
-	font-size: 14px;
+	padding-left: 0.4em;
+	max-width: 16em;
 	color: #141815;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
+/* 札（ボタン）。呼び出しの相手の名前と、リンクの「開く」で共通 */
+.call-btn,
+#link-prompt .lp-open {
+	max-width: 9em;
+	padding: 0.3em 0.8em;
+	border: 1px solid #c3cef4;
+	border-radius: 999px;
+	background: #e2e8fb;
+	color: #1f3fb0;
+	font-family: inherit;
+	font-size: 1em;
+	font-weight: 700;
+	line-height: 1.4;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
 #link-prompt .lp-open {
 	flex: none;
-	padding: 8px 18px;
-	border: none;
-	border-radius: 10px;
 	background: #1f3fb0;
+	border-color: #1f3fb0;
 	color: #fff;
-	font-size: 14px;
-	font-weight: 700;
-	cursor: pointer;
 }
 
+.call-btn:hover:not(:disabled),
 #link-prompt .lp-open:hover {
-	filter: brightness(1.05);
-}
-
-/* hidden 属性で確実に隠す（display:flex より優先） */
-#link-prompt[hidden] {
-	display: none;
-}
-
-/* ── 呼び出し ── */
-
-/* 近くの人を呼ぶボタン。家具のプロンプトの一つ上に重ねる */
-#call-prompt {
-	position: absolute;
-	left: 50%;
-	bottom: 88px;
-	transform: translateX(-50%);
-	z-index: 30;
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-	max-width: 90%;
-}
-
-#call-prompt[hidden] {
-	display: none;
-}
-
-.call-btn {
-	padding: 10px 18px;
-	border: none;
-	border-radius: 12px;
-	background: #fff;
-	color: #141815;
-	font-family: inherit;
-	font-size: 14px;
-	font-weight: 700;
-	box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
-	cursor: pointer;
-}
-
-.call-btn:hover:not(:disabled) {
-	background: #eff1ec;
+	filter: brightness(0.96);
 }
 
 .call-btn:disabled {
@@ -1259,11 +1303,15 @@ body {
 	top: 16px;
 	transform: translateX(-50%);
 	z-index: 40;
-	padding: 12px 20px;
+	padding: 0.8em 1.4em;
 	border-radius: 12px;
 	background: #b23a2a;
 	color: #fff;
 	font-size: 14px;
+	font-size: clamp(11.5px, 1.6cqw, 14px);
+	max-width: 94%;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	font-weight: 700;
 	box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
 	white-space: nowrap;
@@ -1344,4 +1392,148 @@ body {
 	#dock .dock-mini {
 		padding: 4px;
 	}
+}
+
+/* ── 左メニューを畳む（オフィス） ──
+   開いているときは絵（.bi）を隠し、畳んだときは文字（.bl）を隠す。
+   畳んだ状態は #admin に .rail-collapsed が付く（panel.js の initRailToggle）。 */
+#rail {
+	position: relative;
+}
+
+.bi,
+.bs,
+#rail #chat-open-btn {
+	display: none;
+}
+
+/* 畳む／開くボタン。開いているときは組織名の右に小さく置く */
+#rail #rail-toggle {
+	position: absolute;
+	top: 10px;
+	right: 10px;
+	width: 26px;
+	height: 26px;
+	margin: 0;
+	padding: 0;
+	border-radius: 7px;
+	font-size: 14px;
+	line-height: 1;
+	z-index: 1;
+}
+
+/* 組織名がボタンの下に潜らないようにする */
+#rail:has(#rail-toggle) h2 {
+	padding-right: 32px;
+}
+
+#admin.rail-collapsed {
+	grid-template-columns: 60px 1fr;
+}
+
+.rail-collapsed #rail {
+	padding: 8px 6px;
+	gap: 6px;
+}
+
+/* 畳んだときに隠すもの：一覧・チャット・通信量・スピーカーの確認 */
+.rail-collapsed #rail h2,
+.rail-collapsed #roster,
+.rail-collapsed .rail-sub,
+.rail-collapsed #chat-log,
+.rail-collapsed #chat-form,
+.rail-collapsed #usage,
+.rail-collapsed #dock .dock-mini,
+.rail-collapsed .bl,
+.rail-collapsed #dock .toolbtn .lb {
+	display: none;
+}
+
+.rail-collapsed .bi,
+.rail-collapsed .bs {
+	display: inline;
+}
+
+/* 離席・退出は2文字なので、畳んでも文字のまま出す */
+.rail-collapsed #actions .bl {
+	display: inline;
+}
+
+/* ボタンは縦1列に並べ、絵だけの正方形に近い形にする */
+.rail-collapsed #rail-tools,
+.rail-collapsed #actions,
+.rail-collapsed #dock .dock-row {
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 0;
+}
+
+.rail-collapsed #rail #rail-toggle,
+.rail-collapsed #rail #chat-open-btn,
+.rail-collapsed #rail #rail-tools button,
+.rail-collapsed #actions .actbtn,
+.rail-collapsed #dock .toolbtn {
+	position: relative;
+	top: auto;
+	right: auto;
+	display: block;
+	flex: none;
+	width: 100%;
+	height: 40px;
+	margin: 0;
+	padding: 0;
+	border-radius: 10px;
+	font-size: 18px;
+	line-height: 1;
+}
+
+/* 文字で出すボタンは、絵のボタンより小さい字にする。
+   上の共通の指定（font-size: 18px）より後ろに置き、セレクタも強くしてある（そうしないと負ける）。 */
+.rail-collapsed #rail #rail-tools #comment-add-btn,
+.rail-collapsed #rail #actions .actbtn {
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0;
+	white-space: nowrap;   /* 2文字が縦に折り返さないようにする */
+}
+
+/* 畳んだときは、上の「開く」ボタン以外をすべて下に寄せる。
+   よく使うもの（看板・離席・マイクなど）に、画面の下側で手が届くようにするため。
+   先頭のチャットのボタンの上を空けると、それ以降がまとめて下へ送られる。 */
+.rail-collapsed #rail #chat-open-btn {
+	margin-top: auto;
+}
+
+.rail-collapsed #dock {
+	margin-top: 0;
+}
+
+.rail-collapsed #rail #rail-toggle {
+	height: 30px;
+	font-size: 15px;
+}
+
+.rail-collapsed #dock .toolbtn .ic {
+	font-size: 18px;
+}
+
+/* 畳んでいる間に届いたチャットの数 */
+#chat-open-btn .badge {
+	position: absolute;
+	top: 2px;
+	right: 2px;
+	min-width: 16px;
+	height: 16px;
+	padding: 0 4px;
+	border-radius: 999px;
+	background: #b23a2a;
+	color: #fff;
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 16px;
+	text-align: center;
+}
+
+#chat-open-btn .badge[hidden] {
+	display: none;
 }

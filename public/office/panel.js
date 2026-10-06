@@ -15,6 +15,7 @@ import { sendComment, sendChat, sendAway, sendCall } from "./net.js";
 import { stopMoving } from "./move.js";
 import { updateVoice } from "./voice.js";
 import { createRichEditor } from "../richtext.js";
+import { KEY, read, write } from "../storage.js";
 
 // エリア外にいる人どうしが会話できる範囲。voice.js が音声をつなぐ距離と、
 // サーバーがチャットを配る距離と、同じ値を別々に持っている。変えるときは3か所。
@@ -177,7 +178,9 @@ export function updateLinkPrompt() {
 
 	if (best) {
 		currentLink = best.url;
-		document.getElementById("link-label").textContent = `「${best.label || best.url}」を開きますか？`;
+		const label = document.getElementById("link-label");
+		label.textContent = `🔗 ${best.label || best.url}`;
+		label.title = best.label || best.url;   // 長くて切れたときも、乗せれば全部読める
 		el.hidden = false;
 	} else {
 		currentLink = null;
@@ -199,7 +202,7 @@ function nearbyCallTargets() {
 		const d = Math.hypot(p.x - store.me.x, p.y - store.me.y);
 		if (d <= NEAR) list.push({ id, name: o.name, d });
 	}
-	return list.sort((a, b) => a.d - b.d).slice(0, 3);   // 多すぎても押せないので近い順に3人まで
+	return list.sort((a, b) => a.d - b.d).slice(0, 6);   // 多すぎても押せないので近い順に6人まで
 }
 
 export function updateCallPrompt() {
@@ -214,11 +217,18 @@ export function updateCallPrompt() {
 
 	if (!targets.length) { el.hidden = true; el.replaceChildren(); return; }
 
-	el.replaceChildren(...targets.map((t) => {
+	// 「呼び出す」の見出しを1つ置き、相手の名前だけの小さな札を横に並べる。
+	// 1人ずつ「◯◯さんを呼び出す」と書いた大きなボタンを縦に積むと、人が集まったときに
+	// マップを覆ってしまう。
+	const cap = document.createElement("span");
+	cap.className = "prompt-cap";
+	cap.textContent = "🔔 呼び出す";
+	el.replaceChildren(cap, ...targets.map((t) => {
 		const btn = document.createElement("button");
 		btn.type = "button";
 		btn.className = "call-btn";
-		btn.textContent = `${t.name}さんを呼び出す`;
+		btn.textContent = t.name;
+		btn.title = `${t.name}さんを呼び出す`;
 		btn.addEventListener("click", () => {
 			sendCall(t.id);
 			btn.disabled = true;                                  // 連打防止（サーバー側でも弾く）
@@ -415,6 +425,17 @@ export function initAwayUI() {
 
 	if (leaveBtn) leaveBtn.addEventListener("click", () => { window.location.href = "index.html"; });
 
+	// いまの文字数を入力欄の下に出す。上限は textarea の maxlength（office.html）から読む。
+	// 上限に達すると、それ以上は入力できない（ブラウザが止める）ので、数字を赤くして知らせる。
+	const count = document.getElementById("away-count");
+	const syncCount = () => {
+		if (!text || !count) return;
+		const max = text.maxLength > 0 ? text.maxLength : 100;
+		count.textContent = `${text.value.length} / ${max}`;
+		count.classList.toggle("full", text.value.length >= max);
+	};
+	if (text) text.addEventListener("input", syncCount);
+
 	if (awayBtn) awayBtn.addEventListener("click", () => {
 		if (!store.me.away) {
 			store.me.away = true;
@@ -422,6 +443,7 @@ export function initAwayUI() {
 			sendAway(true, store.me.awayMsg || "");
 			updateVoice();   // マイクと画面共有をすぐ止め、ボタンの表示も合わせる（次の周期を待たない）
 			if (text) text.value = store.me.awayMsg || "";
+			syncCount();   // 値をこちらで入れたときは input が発火しないので、数字も合わせる
 			if (modal) modal.classList.add("open");
 			if (text) text.focus();
 		} else {
@@ -445,8 +467,60 @@ export function initAwayUI() {
 function setAwayBtn(away) {
 	const b = document.getElementById("away-btn");
 	if (!b) return;
-	b.textContent = away ? "着席" : "離席";
+	// 文字は .bl の中だけを書き換える（ボタン全体を書き換えると、畳んだとき用の絵が消える）
+	const label = away ? "着席" : "離席";
+	const bl = b.querySelector(".bl");
+	if (bl) bl.textContent = label; else b.textContent = label;
+	b.title = label;
 	b.classList.toggle("on", away);
+}
+
+// ── 左メニューを畳む ──
+// 畳むと幅 56px の帯になり、マップが広く映る。マイク・画面共有・離席などは絵だけの
+// ボタンとして残す（すぐ押せないと困るため、完全には閉じない）。
+// 見た目の切り替えは style.css の .rail-collapsed が受け持ち、ここはクラスの付け外しと
+// 状態の保存、畳んでいる間に届いたチャットの数え上げをする。
+let railCollapsed = false;
+let unreadChat = 0;
+
+export function initRailToggle() {
+	const root = document.getElementById("admin");
+	const toggle = document.getElementById("rail-toggle");
+	if (!root || !toggle) return;
+	const apply = (collapsed, save) => {
+		railCollapsed = collapsed;
+		root.classList.toggle("rail-collapsed", collapsed);
+		toggle.textContent = collapsed ? "»" : "«";
+		toggle.title = collapsed ? "メニューを開く" : "メニューを畳む";
+		toggle.setAttribute("aria-label", toggle.title);
+		if (!collapsed) setUnread(0);
+		if (save) write(KEY.rail, collapsed ? "1" : "0");
+		// マップ部分の幅が変わるので描き直させる（scene.js が resize を聞いている）
+		window.dispatchEvent(new Event("resize"));
+		if (!collapsed) {
+			// 開いた直後はチャット欄の高さが変わっているので、最新のメッセージまで送る
+			const log = document.getElementById("chat-log");
+			if (log) log.scrollTop = log.scrollHeight;
+		}
+	};
+	toggle.addEventListener("click", () => apply(!railCollapsed, true));
+	const chatBtn = document.getElementById("chat-open-btn");
+	if (chatBtn) chatBtn.addEventListener("click", () => {
+		apply(false, true);
+		const input = document.getElementById("chat-input");
+		if (input) input.focus();
+	});
+	// 前回の状態を引き継ぐ。初めての人（保存された値が無い人）は、開いた状態から始める。
+	apply(read(KEY.rail, "") === "1", false);
+}
+
+// 畳んでいる間に届いたチャットの数。チャットを開くボタンの右上に出す。
+function setUnread(n) {
+	unreadChat = n;
+	const badge = document.querySelector("#chat-open-btn .badge");
+	if (!badge) return;
+	badge.hidden = n === 0;
+	badge.textContent = n > 9 ? "9+" : String(n);
 }
 
 // ── 転送量の表示（使用量 / 1000GB） ──
@@ -472,6 +546,7 @@ let lastChatSeq = -1;
 export function updateChat() {
 	const el = document.getElementById("chat-log");
 	if (!el || store.chatSeq === lastChatSeq) return;   // 変化がなければ何もしない
+	const added = lastChatSeq < 0 ? 0 : store.chatSeq - lastChatSeq;   // 前回の描画から増えた件数
 	lastChatSeq = store.chatSeq;
 	let html = "";
 	for (const m of store.messages) {   // 古い順＝上から古い順、新着が一番下
@@ -485,6 +560,12 @@ export function updateChat() {
 	// 下へ引き戻されないようにするため。自分が送ったときは、どこを見ていても下へ送る。
 	const last = store.messages[store.messages.length - 1];
 	if (last && last.self) chatStick = true;
+	// メニューを畳んでいる間に届いたぶんを数える（自分の発言は数えない）。
+	// 1回の描画のあいだに複数届くことがあるので、増えた件数ぶんを末尾から見る。
+	if (railCollapsed && added > 0) {
+		const fresh = store.messages.slice(-added).filter((m) => !m.self).length;
+		if (fresh) setUnread(unreadChat + fresh);
+	}
 	el.innerHTML = html;
 	if (chatStick) el.scrollTop = el.scrollHeight;
 }

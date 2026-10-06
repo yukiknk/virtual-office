@@ -4,7 +4,7 @@
 // キーボードによる移動は move.js。
 //
 // 重ね順は draw() の6行がすべて。レイヤーを足すときはそこへ挿す。
-import { GRID, WORLD, w2s, s2w, setViewport, drawBase, drawCommentBox } from "../map.js";
+import { GRID, WORLD, w2s, s2w, setViewport, lookAt, isScrolling, getScale, drawBase, drawCommentBox } from "../map.js";
 import { store, SHEETS, DEFAULT_AVATAR } from "./store.js";
 import { sendComment, removeComment } from "./net.js";
 import { layerImg, drawAvatar } from "../avatar.js";
@@ -16,6 +16,14 @@ const canvas = document.getElementById("plan");
 const ctx = canvas.getContext("2d");
 
 const LERP_DELAY = 120;     // 他人は120ms過去を補間して滑らかに描く
+
+// これより小さくは縮めない倍率（1マスが 32px × この値で表示される）。
+// ウィンドウを小さくしたとき、マップ全体を収めようとすると人も文字も読めなくなる。
+// ここで縮小を止め、それ以降は自分のまわりだけを映して、歩くと映る範囲が動くようにする。
+// 0.6 なら、1366×768 の画面や、1920×1080 を表示倍率 150% で使っている画面でも全体が映る。
+const MIN_SCALE = 0.6;
+// 見ている場所の中心（ワールド座標）。目標へ少しずつ寄せて、場面の切り替わりを滑らかにする。
+let camX = null, camY = null;
 const SIGN_ALPHA = 0.7;     // 人と重なっている看板の濃さ（下の人が透けて見える程度）
 
 // このフレームで描いた人の一覧。drawWallsAndActors が作り、drawComments が
@@ -112,11 +120,32 @@ export function fit() {
 	canvas.style.width = w + "px";
 	canvas.style.height = h + "px";
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // 以降はCSSピクセル基準で描ける
-	setViewport(w, h);
+	setViewport(w, h, MIN_SCALE);
 	draw();
 }
 
+// 見る場所を決める。マップが画面に収まっているときは何もしない。
+// 基本は自分が中央。勤務者一覧で人を選んでいるあいだは、その人を映す
+// （画面の外にいると、場所を示す輪が見えないため）。
+function updateCamera() {
+	if (!isScrolling()) { camX = camY = null; return; }
+	let tx = store.me.x, ty = store.me.y;
+	const loc = store.locate;
+	const o = loc && Date.now() <= loc.until ? store.others.get(loc.id) : null;
+	const p = o && o.buf[o.buf.length - 1];
+	if (p) { tx = p.x; ty = p.y; }
+	if (camX === null) { camX = tx; camY = ty; }
+	// 目標との差の一部だけ進む。歩いているときはほぼ遅れずについていき、
+	// 映す相手が切り替わったときは滑るように移る。
+	camX += (tx - camX) * 0.25;
+	camY += (ty - camY) * 0.25;
+	if (Math.abs(tx - camX) < 0.5) camX = tx;
+	if (Math.abs(ty - camY) < 0.5) camY = ty;
+	lookAt(camX, camY);
+}
+
 export function draw() {
+	updateCamera();
 	drawBase(ctx, canvas);
 	drawLayer("floor");     // 床（下）
 	drawLayer("rug");       // 敷物（中）
@@ -428,9 +457,9 @@ function drawActorLabels(a) {
 	}
 	if (a.group) return;
 	const top = w2s(a.x, labelTopY(a));
-	const w = drawPillAt(top.x, top.y - 6, a.name, a.color, a.away, false);
+	const w = drawPillAt(top.x, top.y - u(6), a.name, a.color, a.away, false);
 	// 吹き出しは名前の右隣。まとまりのときと同じ位置関係にして、名前とも重ならないようにする
-	if (a.talk && !a.away) drawBubbleAt(top.x + w / 2 + 5, top.y - 6);
+	if (a.talk && !a.away) drawBubbleAt(top.x + w / 2 + u(5), top.y - u(6));
 }
 
 // 名前ラベルを置く高さ（ワールド座標）。画像未読込（丸で代用）のときは丸のすぐ上。
@@ -450,9 +479,20 @@ function labelTopY(a) {
 // 吹き出しも、まとまりの中の誰かが話していれば1つだけ出す。誰が話しているかは、
 // その人の名前の枠を緑にして示す。
 
-const PILL_FONT = "500 12px 'M PLUS Rounded 1c', system-ui, 'Noto Sans JP', sans-serif";
-const PILL_H = 20;      // 名前ラベルの高さ（画面座標）
-const PILL_PAD = 9;     // 名前ラベルの左右の余白
+// 名前・離席・吹き出しの大きさは、マップの表示倍率に合わせて変える。
+// 固定の大きさで描くと、ウィンドウを小さくしたときにマップやアバターだけが縮み、
+// 名前が相対的に大きくなって重なりやすくなる。
+// 下限を設けているのは、縮めすぎると名前が読めなくなるため（倍率 1 で 12px、下限で約 10px）。
+// マップは MIN_SCALE（0.6）まで縮むので、それより手前で名前だけ縮むのを止めている。
+// u(n) は「倍率 1 のときの n px」をいまの倍率に直す。
+const LABEL_MIN = 0.8, LABEL_MAX = 1.5;
+function labelScale() { return Math.max(LABEL_MIN, Math.min(LABEL_MAX, getScale())); }
+function u(n) { return n * labelScale(); }
+
+const LABEL_FAMILY = "'M PLUS Rounded 1c', system-ui, 'Noto Sans JP', sans-serif";
+function pillFont() { return `500 ${u(12)}px ${LABEL_FAMILY}`; }
+const PILL_H = 20;      // 名前ラベルの高さ（倍率 1 のとき。使うときは u() を通す）
+const PILL_PAD = 9;     // 名前ラベルの左右の余白（同上）
 
 // 名前ラベルが重なる人どうしをまとめる。2人以上のまとまりだけを返し、
 // 属している人には a.group を付ける（drawActorLabels が個別の名前を描かない目印）。
@@ -462,10 +502,10 @@ const PILL_PAD = 9;     // 名前ラベルの左右の余白
 // A と B、B と C が重なっていれば A と C が離れていても同じまとまりになる。
 function groupActors(actors) {
 	ctx.save();
-	ctx.font = PILL_FONT;
+	ctx.font = pillFont();
 	const items = actors.map((a) => {
 		const top = w2s(a.x, labelTopY(a));
-		return { a, cx: top.x, cy: top.y - 6, w: ctx.measureText(a.name).width + PILL_PAD * 2 };
+		return { a, cx: top.x, cy: top.y - u(6), w: ctx.measureText(a.name).width + u(PILL_PAD) * 2 };
 	});
 	ctx.restore();
 
@@ -475,7 +515,7 @@ function groupActors(actors) {
 	for (let i = 0; i < items.length; i++) {
 		for (let j = i + 1; j < items.length; j++) {
 			const p = items[i], q = items[j];
-			if (Math.abs(p.cx - q.cx) < (p.w + q.w) / 2 + 4 && Math.abs(p.cy - q.cy) < PILL_H + 4) root[find(i)] = find(j);
+			if (Math.abs(p.cx - q.cx) < (p.w + q.w) / 2 + u(4) && Math.abs(p.cy - q.cy) < u(PILL_H + 4)) root[find(i)] = find(j);
 		}
 	}
 	const byRoot = new Map();
@@ -505,7 +545,7 @@ function drawGroupLabel(g) {
 	const rows = [ms.slice(0, first)];
 	for (let i = first; i < n; i += cols) rows.push(ms.slice(i, i + cols));
 
-	const GAP = 4, ROW = PILL_H + 4;
+	const GAP = u(4), ROW = u(PILL_H + 4);
 	const cx = ms.reduce((sum, m) => sum + m.cx, 0) / n;   // 横はまとまりの中央
 	const baseY = Math.min(...ms.map((m) => m.cy));          // 一番下の段を、いちばん上にいる人の頭上に
 	const talking = (m) => m.a.talk && !m.a.away;
@@ -518,7 +558,7 @@ function drawGroupLabel(g) {
 			drawPillAt(x + m.w / 2, y, m.a.name, m.a.color, m.a.away, talking(m));
 			x += m.w + GAP;
 		}
-		if (r === 0) bubble = { x: cx + total / 2 + 5, y };   // 吹き出しは一番上の段の右
+		if (r === 0) bubble = { x: cx + total / 2 + u(5), y };   // 吹き出しは一番上の段の右
 	});
 	if (ms.some(talking)) drawBubbleAt(bubble.x, bubble.y);
 }
@@ -527,16 +567,16 @@ function drawGroupLabel(g) {
 // 遠くからでも「この人たちは会話中だ」と分かるようにするためのもの。
 // 大きさは画面座標で固定（マップを縮小しても読める大きさを保つ）。
 function drawBubbleAt(x0, yc) {
-	const w = 24, h = 17, r = 8;
+	const w = u(24), h = u(17), r = u(8);
 	const x = x0, y = yc - h / 2;
 	ctx.save();
-	ctx.shadowColor = "rgba(0,0,0,0.25)"; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1;
+	ctx.shadowColor = "rgba(0,0,0,0.25)"; ctx.shadowBlur = u(4); ctx.shadowOffsetY = 1;
 	ctx.beginPath();
 	ctx.roundRect(x, y, w, h, r);
 	// しっぽ（左下、頭のほうへ向ける）
-	ctx.moveTo(x + 5, y + h - 2);
-	ctx.lineTo(x - 2, y + h + 5);
-	ctx.lineTo(x + 11, y + h - 1);
+	ctx.moveTo(x + u(5), y + h - u(2));
+	ctx.lineTo(x - u(2), y + h + u(5));
+	ctx.lineTo(x + u(11), y + h - u(1));
 	ctx.closePath();
 	ctx.fillStyle = "#2a7d3f";
 	ctx.fill();
@@ -546,7 +586,7 @@ function drawBubbleAt(x0, yc) {
 	for (let i = 0; i < 3; i++) {
 		ctx.globalAlpha = i === phase ? 1 : 0.45;
 		ctx.beginPath();
-		ctx.arc(x + 6 + i * 6, y + h / 2, 2, 0, Math.PI * 2);
+		ctx.arc(x + u(6) + i * u(6), y + h / 2, u(2), 0, Math.PI * 2);
 		ctx.fillStyle = "#ffffff";
 		ctx.fill();
 	}
@@ -558,17 +598,17 @@ function drawBubbleAt(x0, yc) {
 function drawPillAt(cx, cy, name, color, away, talking) {
 	ctx.save();
 	if (away) ctx.globalAlpha = 0.6;
-	ctx.font = PILL_FONT;
+	ctx.font = pillFont();
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
-	const h = PILL_H;
-	const w = ctx.measureText(name).width + PILL_PAD * 2;
-	ctx.shadowColor = "rgba(0,0,0,0.28)"; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1;
+	const h = u(PILL_H);
+	const w = ctx.measureText(name).width + u(PILL_PAD) * 2;
+	ctx.shadowColor = "rgba(0,0,0,0.28)"; ctx.shadowBlur = u(4); ctx.shadowOffsetY = 1;
 	ctx.beginPath();
 	ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2);
 	ctx.fillStyle = "#ffffff"; ctx.fill();
 	ctx.shadowColor = "transparent";
-	ctx.lineWidth = talking ? 2.5 : 1.5;
+	ctx.lineWidth = Math.max(1, u(talking ? 2.5 : 1.5));   // 枠は 1px より細くしない（かすれて見えなくなる）
 	ctx.strokeStyle = talking ? "#2a7d3f" : color;
 	ctx.stroke();
 	ctx.fillStyle = "#141815";
@@ -580,19 +620,33 @@ function drawPillAt(cx, cy, name, color, away, talking) {
 // 離席バッジ＋理由をアバターの下に表示
 function drawAwayLabel(sx, sy, msg) {
 	ctx.save();
-	ctx.font = "600 11px 'M PLUS Rounded 1c', system-ui, 'Noto Sans JP', sans-serif";
+	ctx.font = `600 ${u(11)}px ${LABEL_FAMILY}`;
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
-	// 長い理由は末尾を削って「…」に収める（幅186pxまで）
-	let text = "離席中" + (msg ? "：" + msg : "");
-	while (text.length > 4 && ctx.measureText(text).width > 186) text = text.slice(0, -2) + "…";
-	const w = ctx.measureText(text).width + 14;
-	const h = 18, cx = sx, cy = sy + 22;
+	// 理由は最後まで出す。1行に収まらないぶんは折り返して行を足す（理由は最長100文字）。
+	// 以前は1行に切り詰めて「…」にしていたので、長い理由は途中までしか読めなかった。
+	// 折り返しは1文字単位（日本語は単語の区切りが無いため）。
+	const maxW = u(220);
+	const lines = [];
+	let line = "";
+	for (const ch of "離席中" + (msg ? "：" + msg : "")) {
+		if (ch === "\n") { lines.push(line); line = ""; continue; }
+		// 句読点や閉じかっこは行の先頭に送らない（少しはみ出しても前の行に付ける）
+		if (line && !"、。，．）」』】！？".includes(ch) && ctx.measureText(line + ch).width > maxW) { lines.push(line); line = ch; }
+		else line += ch;
+	}
+	lines.push(line);
+
+	const lineH = u(15);
+	const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + u(14);
+	const h = lineH * lines.length + u(3);
+	const cx = sx;
+	const top = sy + u(22) - u(9);   // 1行目の位置は、1行だけのときと変えない。増えた行は下へ伸びる
 	ctx.shadowColor = "rgba(0,0,0,0.25)";
-	ctx.shadowBlur = 4;
+	ctx.shadowBlur = u(4);
 	ctx.shadowOffsetY = 1;
 	ctx.beginPath();
-	ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2);
+	ctx.roundRect(cx - w / 2, top, w, h, Math.min(h / 2, u(9)));
 	ctx.fillStyle = "#4a5046";
 	ctx.fill();
 	// 文字に枠と同じ影が付かないよう、描く前に影を消す
@@ -600,7 +654,7 @@ function drawAwayLabel(sx, sy, msg) {
 	ctx.shadowBlur = 0;
 	ctx.shadowOffsetY = 0;
 	ctx.fillStyle = "#fff";
-	ctx.fillText(text, cx, cy + 0.5);
+	lines.forEach((l, k) => ctx.fillText(l, cx, top + u(1.5) + lineH * (k + 0.5) + 0.5));
 	ctx.restore();
 }
 
