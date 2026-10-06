@@ -322,7 +322,8 @@ function resizeComment(c, corner, p, orig) {
 
 // 壁とアバターの前後関係を描く。
 // 手順：壁を全部描く → アバターを全身描く（手前の壁には切られない）
-//       → そのアバターより北（上）の壁だけ描き直し、頭や名前を奥の壁の裏に隠す。
+//       → そのアバターより手前に来るべき壁だけ描き直し、体を壁の裏に隠す。
+//       → 最後に、名前などのラベルを壁より上に描く（壁に隠れると読めないため）。
 function drawWallsAndActors() {
 	// 1) 壁（objectレイヤー）→ 家具（壁の一つ上）の順に描く。アバターはこの上。
 	drawLayer("object");
@@ -360,7 +361,11 @@ function drawWallsAndActors() {
 		coverWalls(a.x, a.y, wallCells);
 	}
 
-	// 4) まとまっている人たちの名前は、全員を描いたあとにまとめて描く
+	// 4) 名前・離席・吹き出しは、全員と壁を描き終えてから描く。
+	//    アバターと一緒に描くと、直後の「手前の壁の描き直し」に上書きされて隠れる。
+	//    離席の文字は足元より下に出るので、マップの端（下が壁）にいると丸ごと見えなくなっていた。
+	//    アバター本体は、これまでどおり壁との前後関係に従う。
+	for (const a of actors) drawActorLabels(a);
 	for (const g of lastGroups) drawGroupLabel(g);
 }
 
@@ -475,7 +480,6 @@ function drawActor(wx, wy, name, color, opt = {}) {
 		ctx.restore();
 	}
 
-	drawActorLabels({ x: wx, y: wy, name, color, away: opt.away, awayMsg: opt.awayMsg, talk: opt.talk, avatar: cfg, group: opt.group });
 }
 
 // アバターに付く文字や印（名前・離席・吹き出し）。
