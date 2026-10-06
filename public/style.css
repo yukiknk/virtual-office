@@ -628,6 +628,23 @@ textarea {
 	background: rgba(0, 0, 0, 0.35);
 }
 
+/* 入力欄の下に出す補足（上限の案内と、いまの文字数） */
+.cmodal-note {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	margin-top: -8px;
+	font-size: 11px;
+	color: #737a70;
+	font-variant-numeric: tabular-nums;
+}
+
+/* 上限に達したとき */
+.cmodal-note .full {
+	color: #b23a2a;
+	font-weight: 700;
+}
+
 #away-text {
 	width: 100%;
 	box-sizing: border-box;

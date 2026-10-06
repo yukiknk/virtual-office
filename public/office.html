@@ -148,7 +148,11 @@
 			<div id="away-modal">
 				<div class="cmodal-box">
 					<div class="cmodal-head">💬 離席中のコメント</div>
+					<!-- 上限の 100 文字はサーバー側（src/room.js の onAway / onHello）でも切っている。
+					     変えるときは、maxlength・下の案内文・サーバーの3か所を合わせること。 -->
 					<textarea id="away-text" rows="3" placeholder="周りの人に状況を伝えましょう" maxlength="100"></textarea>
+					<!-- 上限と残りの文字数。数字は panel.js が入力のたびに書き換える -->
+					<div class="cmodal-note"><span>100文字まで入力できます</span><span id="away-count">0 / 100</span></div>
 					<div class="cmodal-foot">
 						<button type="button" id="away-save" class="primary">更新</button>
 					</div>

@@ -425,6 +425,17 @@ export function initAwayUI() {
 
 	if (leaveBtn) leaveBtn.addEventListener("click", () => { window.location.href = "index.html"; });
 
+	// いまの文字数を入力欄の下に出す。上限は textarea の maxlength（office.html）から読む。
+	// 上限に達すると、それ以上は入力できない（ブラウザが止める）ので、数字を赤くして知らせる。
+	const count = document.getElementById("away-count");
+	const syncCount = () => {
+		if (!text || !count) return;
+		const max = text.maxLength > 0 ? text.maxLength : 100;
+		count.textContent = `${text.value.length} / ${max}`;
+		count.classList.toggle("full", text.value.length >= max);
+	};
+	if (text) text.addEventListener("input", syncCount);
+
 	if (awayBtn) awayBtn.addEventListener("click", () => {
 		if (!store.me.away) {
 			store.me.away = true;
@@ -432,6 +443,7 @@ export function initAwayUI() {
 			sendAway(true, store.me.awayMsg || "");
 			updateVoice();   // マイクと画面共有をすぐ止め、ボタンの表示も合わせる（次の周期を待たない）
 			if (text) text.value = store.me.awayMsg || "";
+			syncCount();   // 値をこちらで入れたときは input が発火しないので、数字も合わせる
 			if (modal) modal.classList.add("open");
 			if (text) text.focus();
 		} else {
