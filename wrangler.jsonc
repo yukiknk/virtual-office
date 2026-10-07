@@ -4,6 +4,16 @@
 	"name": "virtual-office",
 	"main": "src/index.js",
 	"compatibility_date": "2026-08-01",
+	// ログを Cloudflare に残す（ダッシュボードの Observability で見られる。ベータにも引き継がれる）。
+	// 部屋が作り直される原因を調べるために入れた。残るのは console.log の行と、捕まえられなかった例外。
+	// invocation_logs を false にしているのは、位置のメッセージ1通ごとに1件残ると、
+	// 無料枠（1日20万件）をすぐ使い切るため。
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"invocation_logs": false
+		}
+	},
 	"assets": {
 		"directory": "./public"
 	},
