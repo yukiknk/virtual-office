@@ -24,6 +24,25 @@ const NEAR = GRID * 2;
 const MIC_RELEASE_ALONE_MS = 3_000;    // 近くに誰もいない＝会話していない
 const MIC_RELEASE_NEAR_MS = 30_000;    // 近くに人がいる＝また話す可能性が高い
 
+// ── サーバーとのつなぎ直し ──
+// 部屋（サーバー）は数時間おきに作り直され、そのたびに WebSocket が切れる。音声と画面共有は
+// Cloudflare Realtime と直接つながっているので、ここで畳まなければ流れ続ける。
+// つなぎ直したら hello に resumeInfo() を添え、サーバーに同じ接続を引き継がせる
+// （src/room.js の checkResume）。引き継げなかったときだけ、これまでどおり張り直す。
+//
+// RESUME_MS … サーバーにつながらないまま、音声を保っておく時間。裏のタブはつなぎ直しに
+//             最長1分ほどかかるので、それより長くする。過ぎたら畳む。
+// GONE_GRACE_MS … 部屋が作り直された直後に、まだ戻ってきていない相手の受信を切らずに待つ時間。
+//             作り直しでは全員が一斉に消え、つなぎ直した順に戻ってくる。すぐ切ると、戻ってくるまで
+//             声が途切れる。待つのは「自分もサーバーとの接続が切れてから GONE_GRACE_MS 以内」で、
+//             かつ相手がオフィスにいないときだけ。共有を止めた・離れた・退出した、など
+//             自分がつながったままの場面では、これまでどおりすぐ切る（止めた画面が残らないように）。
+const RESUME_MS = 90_000;
+const GONE_GRACE_MS = 90_000;
+let dropTimer = null;         // サーバーにつながらないまま RESUME_MS が過ぎたら畳むタイマー
+const tickets = new Map();    // 自分が作ったセッション ID -> 合札（引き継ぎで本人と示すためのもの）
+let lostAt = 0;               // 自分のサーバーとの接続が最後に切れた時刻
+
 // ── マイク ──
 // micOn は「利用者の意思」、localStream は「デバイスの実体」で、別物として扱う。
 //
@@ -43,6 +62,7 @@ let stopMeter = null;         // 音量メーターの停止関数。マイク�
 let sfuPc = null;             // SFU用の RTCPeerConnection
 let sfuSessionId = null;
 let sfuPublished = false;     // マイクを送り始めたか（publish は一度だけ）
+let micTrackName = null;      // 送っているマイクのトラック名（引き継ぎでサーバーに伝え直す）
 const sfuSubs = new Map();    // "sessionId/trackName" -> { mid, kind, audioEl, videoEl }
 const pendingClose = new Set();   // 閉じ損ねた受信口の mid。次の周期で閉じ直す
 let voiceBusy = false;        // updateVoice の多重実行を防ぐ
@@ -52,6 +72,7 @@ let sfuBroken = false;        // 接続が壊れたことの記録。次の upda
 let screenStream = null;      // 自分の画面共有
 let screenPc = null;          // 画面送信専用の RTCPeerConnection（購読用と分離）
 let screenSessionId = null;   // 画面送信専用の SFU セッション
+let screenTrackName = null;   // 送っている画面のトラック名
 let selfTile = null;          // 自分の共有プレビュー（自分の画面にも小さく表示）
 let screenStarting = false;   // 画面共有の開始処理中か（二重開始を防ぎ、ボタンに「準備中」を出す）
 let screenGen = 0;            // 画面共有の世代。止めるたびに進め、開始処理の途中で止められたことを検知する
@@ -127,10 +148,16 @@ export async function updateVoice() {
 	if (voiceBusy) return;
 	if (!isConnected()) return;  // 接続待ち
 	voiceBusy = true;
+	const token = store.myToken;
 	try {
 		await locked(voiceStep);
 	} catch (e) {
 		console.warn("[voice]", e);
+		// サーバーとの接続が途中で入れ替わり、古い合言葉で断られただけ（403）なら、
+		// 張り直さずに次の周期でやり直す。送信の開始（publish）の途中だけは送信口が半端に
+		// 残るので、これまでどおり張り直す。
+		const swapped = e && e.status === 403 && (!isConnected() || store.myToken !== token);
+		if (swapped && micStage !== "publish") { micStage = ""; return; }
 		reportVoiceError("cycle", e);
 		// publish や購読の途中で失敗すると、送信口や購読が半端に残る。
 		// 次の周期で畳んで張り直させる（そのまま続けると二重に publish される）。
@@ -235,7 +262,11 @@ async function rtcFetch(path, method, body) {
 	const text = await res.text();   // エラーでも本文を読み切って接続を解放する
 	let data = null;
 	try { data = text ? JSON.parse(text) : null; } catch { }
-	if (!res.ok) throw new Error(`rtc ${method} ${path} -> ${res.status}`);
+	if (!res.ok) {
+		const err = new Error(`rtc ${method} ${path} -> ${res.status}`);
+		err.status = res.status;
+		throw err;
+	}
 	return data;
 }
 
@@ -341,6 +372,7 @@ async function ensureSession() {
 	micStage = "session";
 	const data = await rtcFetch("/rtc/sessions/new", "POST");
 	sfuSessionId = data.sessionId;
+	if (data.ticket) tickets.set(data.sessionId, data.ticket);
 	sfuPc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], bundlePolicy: "max-bundle" });
 	sfuPc.ontrack = onTrack;
 	watchConnection(sfuPc);
@@ -354,13 +386,15 @@ async function publishMic(track) {
 	micSender = tr.sender;
 	const offer = await sfuPc.createOffer();
 	await sfuPc.setLocalDescription(offer);
+	const name = `mic-${store.myId}`;
 	const answer = await rtcFetch(`/rtc/sessions/${sfuSessionId}/tracks/new`, "POST", {
 		sessionDescription: { type: "offer", sdp: offer.sdp },
-		tracks: [{ location: "local", mid: tr.mid, trackName: `mic-${store.myId}` }],
+		tracks: [{ location: "local", mid: tr.mid, trackName: name }],
 	});
 	await sfuPc.setRemoteDescription(answer.sessionDescription);
 	sfuPublished = true;
-	store.ws.send(JSON.stringify({ t: "publish", sessionId: sfuSessionId, audio: `mic-${store.myId}` }));
+	micTrackName = name;
+	store.ws.send(JSON.stringify({ t: "publish", sessionId: sfuSessionId, audio: name }));
 }
 
 // 接続が壊れたことを記録する。実際に畳むのは updateVoice。
@@ -451,14 +485,22 @@ async function updateSubscriptions(targetIds) {
 	for (const id of targetIds) {
 		const o = store.others.get(id);
 		if (!o || !o.sfu) continue;
-		if (o.sfu.audio) want.set(`${o.sfu.sessionId}/${o.sfu.audio}`, { sessionId: o.sfu.sessionId, trackName: o.sfu.audio, kind: "audio" });
+		if (o.sfu.audio) want.set(`${o.sfu.sessionId}/${o.sfu.audio}`, { sessionId: o.sfu.sessionId, trackName: o.sfu.audio, kind: "audio", owner: o.sfu.sessionId });
 		if (allowScreen && o.sfu.screen) {
 			const ssid = o.sfu.screenSessionId || o.sfu.sessionId;   // 画面は別セッション
-			want.set(`${ssid}/${o.sfu.screen}`, { sessionId: ssid, trackName: o.sfu.screen, kind: "screen", name: o.name });
+			want.set(`${ssid}/${o.sfu.screen}`, { sessionId: ssid, trackName: o.sfu.screen, kind: "screen", name: o.name, owner: o.sfu.sessionId });
 		}
 	}
 	for (const [key, t] of want) if (!sfuSubs.has(key)) await subscribe(key, t);
-	for (const key of [...sfuSubs.keys()]) if (!want.has(key)) await unsubscribe(key);
+	// オフィスにいる人の音声用セッション。持ち主がここにいれば、相手は残っている
+	const present = new Set();
+	for (const o of store.others.values()) if (o.sfu) present.add(o.sfu.sessionId);
+	const afterRestart = lostAt && Date.now() - lostAt < GONE_GRACE_MS;
+	for (const [key, sub] of [...sfuSubs]) {
+		if (want.has(key)) continue;
+		if (afterRestart && !present.has(sub.owner)) continue;   // 作り直しのあと、まだ戻ってきていない（GONE_GRACE_MS）
+		await unsubscribe(key);
+	}
 }
 
 // 1人ぶんの受信を開始する。
@@ -476,7 +518,7 @@ async function subscribe(key, t) {
 	// SFU が「今すぐ再ネゴせよ」と言ってきたら応じる（新しい受信口が増えたとき）。
 	// ここで失敗しても登録前なので、やはり次の周期で再試行される。
 	if (resp.requiresImmediateRenegotiation) await renegotiate(resp.sessionDescription);
-	const sub = { mid, kind: t.kind, name: t.name || "", audioEl: null, videoEl: null };
+	const sub = { mid, kind: t.kind, name: t.name || "", owner: t.owner, audioEl: null, videoEl: null };
 	sfuSubs.set(key, sub);
 	attachSub(sub);   // mid から受信トラックを取り出して確実に表示/再生（複数共有でも取りこぼさない）
 }
@@ -529,6 +571,42 @@ async function renegotiate(remoteDesc) {
 	});
 }
 
+// ── サーバーとのつなぎ直し（net.js から呼ばれる） ──
+
+// hello に添える、引き継いでほしい接続。何も張っていなければ null。
+export function resumeInfo() {
+	if (!sfuPc || !sfuSessionId || !tickets.has(sfuSessionId)) return null;
+	const ids = [sfuSessionId];
+	if (screenSessionId) ids.push(screenSessionId);
+	return {
+		sessions: ids.filter((id) => tickets.has(id)).map((id) => ({ id, ticket: tickets.get(id) })),
+		sessionId: sfuSessionId,
+		audio: sfuPublished ? micTrackName : undefined,
+		screenSessionId: screenSessionId || undefined,
+		screen: screenSessionId ? screenTrackName : undefined,
+	};
+}
+
+// サーバーとの接続が切れた。音声はすぐには畳まず、RESUME_MS だけ待つ。
+export function onServerLost() {
+	lostAt = Date.now();
+	clearTimeout(dropTimer);
+	dropTimer = setTimeout(() => {
+		dropTimer = null;
+		if (!isConnected()) teardownSfu();
+	}, RESUME_MS);
+}
+
+// サーバーにつながった（welcome を受け取った）。resumed は、音声の接続を引き継げたか。
+export function onServerJoined(resumed) {
+	clearTimeout(dropTimer);
+	dropTimer = null;
+	talkSent = false;   // サーバーは「話している」を覚えていないので、次に話したとき送り直す
+	// 引き継げなかった（合札が通らなかった、など）。サーバーは古い接続を知らないので、
+	// これまでどおり畳んで張り直す。何も張っていなかったなら何もしない。
+	if (!resumed && (sfuPc || screenPc)) teardownSfu();
+}
+
 // 接続断・離席・転送量上限でSFUを畳む。
 // 外（net.js）から呼ぶときは locked を通し、実行中の周期処理と重ならないようにする。
 export function teardownSfu() {
@@ -557,7 +635,9 @@ async function teardownNow(keepScreen = false) {
 		try { store.ws.send(JSON.stringify(msg)); } catch { }
 	}
 	sfuPublished = false;
+	micTrackName = null;
 	if (sfuPc) { try { sfuPc.close(); } catch { } sfuPc = null; }
+	if (sfuSessionId) tickets.delete(sfuSessionId);
 	sfuSessionId = null;
 	// 離席・転送量の上限・接続の張り直しでここへ来る。いずれもマイクは即座に閉じる。
 	micSender = null;
@@ -595,6 +675,7 @@ async function startScreen() {
 		if (gen !== screenGen || !canShare()) throw new Error("cancelled");
 		// 画面送信は専用のセッション/PCで行う（購読用の sfuPc と分離＝SDP衝突を防ぐ）
 		const data = await rtcFetch("/rtc/sessions/new", "POST");
+		if (data.ticket) tickets.set(data.sessionId, data.ticket);
 		pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], bundlePolicy: "max-bundle" });
 		const track = stream.getVideoTracks()[0];
 		const tr = pc.addTransceiver(track, { direction: "sendonly" });
@@ -608,11 +689,11 @@ async function startScreen() {
 		if (gen !== screenGen || !canShare()) throw new Error("cancelled");
 
 		// ここから先は await を挟まない。状態の確定・全員への通知・ボタンの更新を一息に行う。
-		screenStream = stream; screenPc = pc; screenSessionId = data.sessionId;
+		screenStream = stream; screenPc = pc; screenSessionId = data.sessionId; screenTrackName = `screen-${store.myId}`;
 		watchScreen(pc);
 		// 音声トラック名は付けない。マイクを publish していない人が付けると、
 		// 存在しない音声を全員が購読しようとし続ける（音声は publishMic が別に知らせる）。
-		store.ws.send(JSON.stringify({ t: "publish", sessionId: sfuSessionId, screenSessionId, screen: `screen-${store.myId}` }));
+		store.ws.send(JSON.stringify({ t: "publish", sessionId: sfuSessionId, screenSessionId, screen: screenTrackName }));
 		track.onended = () => { if (screenStream === stream) stopScreen(); };   // ブラウザの「共有を停止」に追従
 		// 自分の共有プレビューを自分の画面にも出す（共有できているか確認用）
 		selfTile = addScreenTile("自分");
@@ -641,7 +722,9 @@ function stopScreenLocal() {
 	if (selfTile) { closeBigIfShowing(selfTile.srcObject); removeTile(selfTile); selfTile = null; }
 	if (screenStream) { for (const t of screenStream.getTracks()) t.stop(); screenStream = null; }
 	if (screenPc) { try { screenPc.close(); } catch { } screenPc = null; }   // 専用PCごと閉じる
+	if (screenSessionId) tickets.delete(screenSessionId);
 	screenSessionId = null;
+	screenTrackName = null;
 	syncScreenBtn();
 	return had;
 }
