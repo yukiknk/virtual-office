@@ -32,14 +32,16 @@ const MIC_RELEASE_NEAR_MS = 30_000;    // 近くに人がいる＝また話す�
 //
 // RESUME_MS … サーバーにつながらないまま、音声を保っておく時間。裏のタブはつなぎ直しに
 //             最長1分ほどかかるので、それより長くする。過ぎたら畳む。
-// GONE_GRACE_MS … 相手がオフィスから消えても、受信を切らずに待つ時間。部屋が作り直されると
-//             全員が一斉に消え、つなぎ直した順に戻ってくる。すぐ切ると、戻ってくるまで声が途切れる。
-//             近くから離れた・ミュートで取り下げた、など相手が残っている場合は待たずに切る。
+// GONE_GRACE_MS … 部屋が作り直された直後に、まだ戻ってきていない相手の受信を切らずに待つ時間。
+//             作り直しでは全員が一斉に消え、つなぎ直した順に戻ってくる。すぐ切ると、戻ってくるまで
+//             声が途切れる。待つのは「自分もサーバーとの接続が切れてから GONE_GRACE_MS 以内」で、
+//             かつ相手がオフィスにいないときだけ。共有を止めた・離れた・退出した、など
+//             自分がつながったままの場面では、これまでどおりすぐ切る（止めた画面が残らないように）。
 const RESUME_MS = 90_000;
 const GONE_GRACE_MS = 90_000;
 let dropTimer = null;         // サーバーにつながらないまま RESUME_MS が過ぎたら畳むタイマー
 const tickets = new Map();    // 自分が作ったセッション ID -> 合札（引き継ぎで本人と示すためのもの）
-const goneAt = new Map();     // 受信中の相手が消えた時刻。"sessionId/trackName" -> 時刻
+let lostAt = 0;               // 自分のサーバーとの接続が最後に切れた時刻
 
 // ── マイク ──
 // micOn は「利用者の意思」、localStream は「デバイスの実体」で、別物として扱う。
@@ -483,28 +485,20 @@ async function updateSubscriptions(targetIds) {
 	for (const id of targetIds) {
 		const o = store.others.get(id);
 		if (!o || !o.sfu) continue;
-		if (o.sfu.audio) want.set(`${o.sfu.sessionId}/${o.sfu.audio}`, { sessionId: o.sfu.sessionId, trackName: o.sfu.audio, kind: "audio" });
+		if (o.sfu.audio) want.set(`${o.sfu.sessionId}/${o.sfu.audio}`, { sessionId: o.sfu.sessionId, trackName: o.sfu.audio, kind: "audio", owner: o.sfu.sessionId });
 		if (allowScreen && o.sfu.screen) {
 			const ssid = o.sfu.screenSessionId || o.sfu.sessionId;   // 画面は別セッション
-			want.set(`${ssid}/${o.sfu.screen}`, { sessionId: ssid, trackName: o.sfu.screen, kind: "screen", name: o.name });
+			want.set(`${ssid}/${o.sfu.screen}`, { sessionId: ssid, trackName: o.sfu.screen, kind: "screen", name: o.name, owner: o.sfu.sessionId });
 		}
 	}
-	for (const [key, t] of want) { goneAt.delete(key); if (!sfuSubs.has(key)) await subscribe(key, t); }
-	// オフィスにいる人のセッション。ここに無い＝相手ごと消えた（つなぎ直しの途中かもしれない）
+	for (const [key, t] of want) if (!sfuSubs.has(key)) await subscribe(key, t);
+	// オフィスにいる人の音声用セッション。持ち主がここにいれば、相手は残っている
 	const present = new Set();
-	for (const o of store.others.values()) {
-		if (!o.sfu) continue;
-		present.add(o.sfu.sessionId);
-		if (o.sfu.screenSessionId) present.add(o.sfu.screenSessionId);
-	}
-	const now = Date.now();
-	for (const key of [...sfuSubs.keys()]) {
+	for (const o of store.others.values()) if (o.sfu) present.add(o.sfu.sessionId);
+	const afterRestart = lostAt && Date.now() - lostAt < GONE_GRACE_MS;
+	for (const [key, sub] of [...sfuSubs]) {
 		if (want.has(key)) continue;
-		if (!present.has(key.slice(0, key.indexOf("/")))) {
-			if (!goneAt.has(key)) goneAt.set(key, now);
-			if (now - goneAt.get(key) < GONE_GRACE_MS) continue;   // 戻ってくるのを待つ（GONE_GRACE_MS）
-		}
-		goneAt.delete(key);
+		if (afterRestart && !present.has(sub.owner)) continue;   // 作り直しのあと、まだ戻ってきていない（GONE_GRACE_MS）
 		await unsubscribe(key);
 	}
 }
@@ -524,7 +518,7 @@ async function subscribe(key, t) {
 	// SFU が「今すぐ再ネゴせよ」と言ってきたら応じる（新しい受信口が増えたとき）。
 	// ここで失敗しても登録前なので、やはり次の周期で再試行される。
 	if (resp.requiresImmediateRenegotiation) await renegotiate(resp.sessionDescription);
-	const sub = { mid, kind: t.kind, name: t.name || "", audioEl: null, videoEl: null };
+	const sub = { mid, kind: t.kind, name: t.name || "", owner: t.owner, audioEl: null, videoEl: null };
 	sfuSubs.set(key, sub);
 	attachSub(sub);   // mid から受信トラックを取り出して確実に表示/再生（複数共有でも取りこぼさない）
 }
@@ -595,6 +589,7 @@ export function resumeInfo() {
 
 // サーバーとの接続が切れた。音声はすぐには畳まず、RESUME_MS だけ待つ。
 export function onServerLost() {
+	lostAt = Date.now();
 	clearTimeout(dropTimer);
 	dropTimer = setTimeout(() => {
 		dropTimer = null;
@@ -631,7 +626,6 @@ async function teardownNow(keepScreen = false) {
 	}
 	if (sfuSubs.size) closeBig();
 	sfuSubs.clear();
-	goneAt.clear();
 	// セッションごと消えるので、閉じ損ねの持ち越しも無意味になる（mid は次で振り直し）
 	pendingClose.clear();
 	// 音声と画面のどちらかでも送っていたら取り下げを知らせる。
