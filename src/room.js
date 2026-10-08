@@ -56,6 +56,7 @@ export class Room {
     this.grace = null;            // 作り直しのあとの待ち { until, quiet }。待っていなければ null
     this.lastTick = 0;            // 転送量を最後に積んだ時刻（alarm が使う）
     // 起動の記録と名簿の読み込みが済むまで、ほかの処理を待たせる。
+    this.ticketKey = null;        // 合札の鍵（ticketFor が storage から読む）
     this.ctx.blockConcurrencyWhile(() => this.boot());
   }
 
@@ -317,6 +318,9 @@ export class Room {
   // 現在の看板も併せて送る（以後は変更のたびに broadcastComments が配る）。
   async onHello(ws, att, msg) {
     await this.ensureBudgetLoaded();
+    // つなぎ直しのとき、音声と画面共有の接続をそのまま引き継ぐ（checkResume）。
+    // 検証に await を挟むので、att を読み直す前に済ませておく。
+    const sfu = await this.checkResume(msg.resume);
     att = ws.deserializeAttachment() || att;   // await のあいだに届いた変更を上書きしない
     att.at = Date.now();       // 位置が届く前に「応答なし」と判定されないようにする
     const first = !att.name;   // 同じ接続で hello を送り直しても入室通知は出さない
@@ -328,6 +332,7 @@ export class Room {
     // 離席状態もここで受け取る。再接続時に away で送り直させると、そのたびに通知が出る。
     att.away = !!msg.away;
     att.awayMsg = att.away ? String(msg.awayMsg || "").slice(0, 100) : "";
+    if (sfu) Object.assign(att, sfu);
     // つなぎ直しか：退出通知を待っている最中、同じ cid の古い接続がまだ残っている、
     // または名簿に残っている（部屋が作り直されて、上の2つの記憶が消えた場合はこれで分かる）
     const rejoin = this.cancelLeave(att.cid) | this.hasCid(att.cid, att.id) | this.roster.has(att.cid);
@@ -343,7 +348,7 @@ export class Room {
     }
     ws.serializeAttachment(att);
     ws.send(JSON.stringify({
-      t: "welcome", id: att.id, token: att.token,
+      t: "welcome", id: att.id, token: att.token, resumed: !!sfu,
       budget: { level: this.budgetLevel, usedGb: this.usedGb(), limitGb: LIMIT_GB },
     }));
     await this.ensureComments();
@@ -354,6 +359,55 @@ export class Room {
     this.roster.set(att.cid, { name: att.name, at: Date.now() });
     if (!prev || prev.name !== att.name) await this.saveRoster();
     if (first && !rejoin) await this.notify(`${escapeSlack(att.name)}さんがスペースに入室しました。`);
+  }
+
+  // ── 音声の接続の引き継ぎ ──
+  //
+  // 部屋が作り直されると全員の WebSocket が切れるが、音声と画面共有は Cloudflare Realtime と
+  // 直接つながっているので、ブラウザ側で畳まなければ流れ続ける。つなぎ直したブラウザは
+  // hello に「自分の音声セッション」を添えてくるので、それを新しい接続に引き継ぐ。
+  // これで、作り直しのたびに通話が途切れ、画面共有が止まることがなくなる。
+  //
+  // セッション ID は配信（broadcast）で全員に配っているので、ID を名乗れるだけでは本人と
+  // 言えない。セッションを作ったときに本人にだけ渡す合札（ticket）を一緒に出させる。
+  // 合札は storage の鍵で作る HMAC なので、部屋が作り直されても確かめられる。
+  //
+  // 受け取ったものが確かめられなければ null を返す。ブラウザは resumed: false を見て、
+  // これまでどおり音声を張り直す。
+  async checkResume(r) {
+    try {
+      if (!r || typeof r !== "object" || typeof r.sessionId !== "string") return null;
+      const ok = [];
+      for (const s of (Array.isArray(r.sessions) ? r.sessions.slice(0, 4) : [])) {
+        if (!s || typeof s.id !== "string" || !/^[\w-]{1,128}$/.test(s.id) || typeof s.ticket !== "string") continue;
+        if (s.ticket === await this.ticketFor(s.id)) ok.push(s.id);
+      }
+      if (!ok.includes(r.sessionId)) return null;   // 音声用のセッションが確かめられなければ引き継がない
+      const track = (v) => (typeof v === "string" && /^[\w-]{1,64}$/.test(v)) ? v : undefined;
+      const out = { sessions: ok, sfuSessionId: r.sessionId, audioTrack: track(r.audio), screenTrack: undefined, screenSessionId: undefined };
+      if (typeof r.screenSessionId === "string" && ok.includes(r.screenSessionId) && track(r.screen)) {
+        out.screenSessionId = r.screenSessionId;
+        out.screenTrack = track(r.screen);
+      }
+      return out;
+    } catch (e) {
+      await this.logError("resume", e);
+      return null;
+    }
+  }
+
+  // セッション ID に対する合札。鍵は部屋ごとに1回だけ作り、storage に残す。
+  async ticketFor(sid) {
+    if (!this.ticketKey) {
+      let raw = await this.ctx.storage.get("ticketKey");
+      if (!raw) {
+        raw = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");
+        await this.ctx.storage.put("ticketKey", raw);
+      }
+      this.ticketKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(raw), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    }
+    const sig = await crypto.subtle.sign("HMAC", this.ticketKey, new TextEncoder().encode(sid));
+    return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
   // 看板の追加・更新。同じ id が来たら置き換え（移動やリサイズもこの経路）。
@@ -707,6 +761,7 @@ export class Room {
         if (!att.sessions.includes(sid)) att.sessions.push(sid);
         if (!att.sfuSessionId) att.sfuSessionId = sid;   // 最初のセッション＝音声・購読用
         ws.serializeAttachment(att);
+        body.ticket = await this.ticketFor(sid);   // つなぎ直しで引き継ぐための合札（checkResume）
       }
       return json(body, res.status);
     }

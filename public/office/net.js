@@ -6,7 +6,7 @@
 // 使うのは main.js（connect / sendPos）と scene.js（各 send*）の2つだけ。
 import { store } from "./store.js";
 import { loadAll } from "./api.js";
-import { applyBudget, teardownSfu } from "./voice.js";
+import { applyBudget, resumeInfo, onServerLost, onServerJoined } from "./voice.js";
 import { playAlarm, showCallNotification } from "./alarm.js";
 
 // このタブを見分ける ID。再接続しても、ページを再読み込みしても変わらない。
@@ -43,8 +43,9 @@ export function connect() {
 
 	// 名前とアバターは接続のたびに送る。サーバーは切断でこれらを忘れるため。
 	// 離席状態も一緒に送る。あとから away で送り直すと、再接続のたびに Slack へ「離席しました」が流れる。
+	// 音声と画面共有の接続も添えて、サーバーに引き継がせる（voice.js の resumeInfo）。
 	ws.addEventListener("open", () => {
-		ws.send(JSON.stringify({ t: "hello", name: store.me.name, avatar: store.me.avatar, cid: CID, away: store.me.away, awayMsg: store.me.awayMsg }));
+		ws.send(JSON.stringify({ t: "hello", name: store.me.name, avatar: store.me.avatar, cid: CID, away: store.me.away, awayMsg: store.me.awayMsg, resume: resumeInfo() || undefined }));
 		// 位置もすぐ送る。止まっている人は2秒に1回しか送らないので、待つと
 		// そのあいだサーバーが位置を知らず、他の人から見えない・声が届かない時間ができる。
 		lastSent = 0;
@@ -55,7 +56,12 @@ export function connect() {
 	// error は listen していない。WebSocket はエラーの後に必ず close が来るので close だけで足りる。
 	// 再接続の間隔は1秒固定。部屋が1つの小規模用途なので、バックオフは入れていない。
 	ws.addEventListener("close", (e) => {
-		teardownSfu();
+		if (store.ws !== ws) return;   // すでに新しい接続に替わっている
+		// 音声はここでは畳まない。部屋の作り直しなどで切れても、つなぎ直せば引き継げる
+		// （voice.js の onServerLost / onServerJoined）。id と合言葉は次の welcome まで無効にする。
+		store.myId = null;
+		store.myToken = null;
+		onServerLost();
 		// 4001 は「同じ ID の別の接続が入ってきたので退かされた」。タブを複製すると
 		// sessionStorage ごと写るので、2つのタブが同じ ID になる。そのまま入り直すと
 		// 互いに退かし合うので、退かされた側が ID を作り直して別のタブとして入る。
@@ -93,6 +99,7 @@ function onWelcome(msg) {
 	store.myId = msg.id;
 	store.myToken = msg.token;
 	applyBudgetInfo(msg.budget);
+	onServerJoined(!!msg.resumed);
 	if (store.me.away) sendAway(true, store.me.awayMsg);   // 再接続時に離席状態を送り直す
 }
 
