@@ -25,6 +25,7 @@
 //     前者は作り直され、後者は ensureBudgetLoaded が storage から読み直す
 
 import { GB, LIMIT_GB, NEAR, CALL_COOLDOWN_MS, LEAVE_GRACE_MS, STALE_MS, BOOT_GRACE_MS, ROSTER_QUIET_MS } from "./config.js";
+import { talkGroupKeys } from "../public/talk.js";
 import { json, cleanAvatar, cleanComment, monthKey, levelFor, zoneIdAtWorld, bytesPerSec, readWebhookUrl, escapeSlack } from "./helpers.js";
 
 export class Room {
@@ -201,7 +202,7 @@ export class Room {
     for (const ws of this.sockets()) { try { ws.send(data); } catch { } }
   }
 
-  // チャット中継：送信者のエリア内 or 近接の人（＋送信者本人）へ送る。
+  // チャット中継：送信者と同じ会話にいる人（＋送信者本人）へ送る。
   // 配信範囲の条件は public/office/voice.js の currentTargets と同じにしてある
   // （声が届く相手とチャットが届く相手を一致させるため）。
   //
@@ -213,18 +214,15 @@ export class Room {
     try { zones = JSON.parse((await this.env.LAYOUT_KV.get("zones")) || "[]"); } catch { }
     // 位置がまだ届いていない人（接続直後・休眠明け）は、近いかどうか判定できないので
     // 配信の対象にしない。{0,0} 扱いにすると、左上にいる人どうしとして届いてしまう。
-    const sp = posOf(att);
-    const sz = sp ? zoneIdAtWorld(zones, sp.x, sp.y) : null;
+    // 届く相手の決まりは public/talk.js（画面の声の相手と共通）
     const out = JSON.stringify({ t: "chat", id: att.id, name: att.name, text });
-    for (const ws of this.sockets()) {
-      const a2 = ws.deserializeAttachment();
-      if (!a2 || !a2.name) continue;
-      if (a2.id === att.id) { try { ws.send(out); } catch { } continue; }   // 送信者にも表示
-      const p2 = posOf(a2);
-      if (!sp || !p2) continue;
-      const z2 = zoneIdAtWorld(zones, p2.x, p2.y);
-      const ok = sz ? (z2 === sz) : (z2 === null && Math.hypot(p2.x - sp.x, p2.y - sp.y) <= NEAR);
-      if (ok) { try { ws.send(out); } catch { } }
+    const sockets = this.sockets().map((ws) => ({ ws, a: ws.deserializeAttachment() })).filter((s) => s.a && s.a.name);
+    const people = sockets.filter((s) => posOf(s.a)).map((s) => ({ id: s.a.id, ...posOf(s.a), name: s.a.name }));
+    const keys = talkGroupKeys(people, (x, y) => zoneIdAtWorld(zones, x, y));
+    const mine = keys.get(att.id);
+    for (const { ws, a } of sockets) {
+      if (a.id === att.id) { try { ws.send(out); } catch { } continue; }   // 送信者にも表示
+      if (mine && keys.get(a.id) === mine) { try { ws.send(out); } catch { } }
     }
   }
 
@@ -699,7 +697,7 @@ export class Room {
       if (!att || !att.name) continue;
       const p = posOf(att);
       if (!p) continue;   // 位置が分からない人は数えない
-      users.push({ id: att.id, x: p.x, y: p.y, audio: !!att.audioTrack, screen: !!att.screenTrack });
+      users.push({ id: att.id, x: p.x, y: p.y, name: att.name, audio: !!att.audioTrack, screen: !!att.screenTrack });
     }
     // 前回からの経過時間ぶんを積む。ふだんは60秒おきだが、起動直後の照合のために早く来ることが
     // あるので、固定の60秒で積むと多く数えてしまう。長く空いた場合は1周期ぶんまでにする

@@ -10,7 +10,7 @@
 //
 // 参照する要素の id は office.html にある。id を変えると片方だけ壊れる。
 import { GRID, WORLD } from "../map.js";
-import { store, zoneIdAt } from "./store.js";
+import { store, zoneIdAt, talkPeers } from "./store.js";
 import { sendComment, sendChat, sendAway, sendCall } from "./net.js";
 import { stopMoving } from "./move.js";
 import { updateVoice } from "./voice.js";
@@ -270,7 +270,7 @@ export function updateCallAlert() {
 
 // ── 在室者リスト（左メニュー）──
 // 会話エリアごとに中の人をまとめる。エリア外にいるときは、いま会話できる
-// 「近くの人」（同じくエリア外で半径NEAR以内）を自分視点でまとめて表示する。
+// 「近くの人」（エリア外で同じ会話にいる人。決まりは ../talk.js）を自分視点でまとめて表示する。
 //
 // つまり「いま自分の声が届く相手」の一覧であって、接続者の一覧ではない。
 // 接続者の全員を見るのは勤務者一覧（下）のほう。
@@ -288,18 +288,13 @@ export function updateRoster() {
 
 // いま自分と同じ範囲にいる人（自分を除く）。声とチャットが届く相手。
 //
-// 会話エリアの中にいれば同じエリアの人、外にいれば半径 NEAR 以内でエリア外の人。
-// サーバーがチャットを配る条件（src/room.js の relayChat）と同じ式で、離席中の人も含む。
+// 会話エリアの中にいれば同じエリアの人、外にいれば近くの人と名前がまとまって表示される人（決まりは ../talk.js）。
+// サーバーがチャットを配る相手（src/room.js の relayChat）と同じで、離席中の人も含む。
 // 戻り値の zone は自分がいる会話エリア（外にいれば null）。
 function myGroup() {
 	const myZone = zoneIdAt(store.me.x, store.me.y);
 	const names = [];
-	for (const o of store.others.values()) {
-		const p = o.buf[o.buf.length - 1];
-		if (!p) continue;
-		const oz = zoneIdAt(p.x, p.y);
-		if (myZone ? oz === myZone : (oz === null && Math.hypot(p.x - store.me.x, p.y - store.me.y) <= NEAR)) names.push(o.name);
-	}
+	for (const id of talkPeers()) { const o = store.others.get(id); if (o) names.push(o.name); }
 	const zone = myZone ? (store.zones.find((z) => z.id === myZone) || { name: "会話エリア" }) : null;
 	return { zone, names };
 }

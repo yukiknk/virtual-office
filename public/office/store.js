@@ -4,6 +4,7 @@
 // 「定義」だけでなく「初期化」もここで済ませているファイル。
 import { WORLD } from "../map.js";
 import { KEY, read, readJson } from "../storage.js";
+import { talkGroupKeys } from "../talk.js";
 
 // 家具カテゴリごとの画像シート。
 // キーはレイアウトデータの cat の値と一致していないといけない（scene.js が SHEETS[cat] で引く）。
@@ -103,6 +104,21 @@ if (savedPos && Number.isFinite(savedPos.x) && Number.isFinite(savedPos.y)) {
 // layout から通行禁止マスの集合を作り直す。layout が届く・更新されるたびに呼ぶ。
 export function rebuildBlocked() {
 	store.blocked = new Set(store.layout.filter((i) => i.layer === "block").map((i) => `${i.col},${i.row}`));
+}
+
+// いま自分と同じ会話にいる人の id（自分を除く）。決まりは talk.js（サーバーと共通）。
+// 離席中の人も含む（声をつながないのは voice.js が別に除く）。
+export function talkPeers() {
+	const people = [{ id: "", x: store.me.x, y: store.me.y, name: store.me.name }];
+	for (const [id, o] of store.others) {
+		const last = o.buf[o.buf.length - 1];
+		if (last) people.push({ id, x: last.x, y: last.y, name: o.name });
+	}
+	const keys = talkGroupKeys(people, zoneIdAt);
+	const mine = keys.get("");
+	const ids = new Set();
+	for (const [id, k] of keys) if (id && k === mine) ids.add(id);
+	return ids;
 }
 
 // 点がどの会話エリアの中にあるか（id または null）。

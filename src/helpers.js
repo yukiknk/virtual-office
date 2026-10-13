@@ -1,7 +1,8 @@
 // 状態を持たない純粋関数のまとめ（レスポンス生成・入力検証・転送量推定など）。
 // ここに置く関数は env も this も参照しない。テストしたくなったらここから。
 
-import { GB, AUDIO_BPS, SCREEN_BPS, SCREEN_OFF_GB, VOICE_OFF_GB, NEAR, SLACK_WEBHOOK_PREFIX, WORLD_W, WORLD_H } from "./config.js";
+import { talkGroupKeys } from "../public/talk.js";
+import { GB, AUDIO_BPS, SCREEN_BPS, SCREEN_OFF_GB, VOICE_OFF_GB, SLACK_WEBHOOK_PREFIX, WORLD_W, WORLD_H } from "./config.js";
 
 // JSON レスポンスを作る
 export function json(body, status = 200) {
@@ -129,21 +130,17 @@ export function zoneIdAtWorld(zones, x, y) {
 // 現在の購読グラフから 1秒あたりの下り転送量（バイト）を推定する。
 //
 // 「誰が誰の音声・画面を受け取っているか」を全員ぶん数え上げる。判定の条件は
-// public/office/voice.js の currentTargets と同じ（エリア内は同エリア、外は近接）。
+// public/office/voice.js の currentTargets と同じ（public/talk.js）。
 //
 // 全員×全員の二重ループなので、人数が増えたときに最初に重くなるのはここ。
 // 部屋が1つで人数が限られる前提で、そのまま書いてある。
 export function bytesPerSec(users, zones) {
   let bps = 0;
+  const keys = talkGroupKeys(users, (x, y) => zoneIdAtWorld(zones, x, y));   // 同じ会話かどうか（public/talk.js）
   for (const L of users) {
-    const lz = zoneIdAtWorld(zones, L.x, L.y);
     for (const P of users) {
       if (P.id === L.id) continue;
-      const pz = zoneIdAtWorld(zones, P.x, P.y);
-      let sub;
-      if (lz) sub = (pz === lz);                                   // エリア内：同じエリア
-      else sub = (pz === null && Math.hypot(P.x - L.x, P.y - L.y) <= NEAR);  // エリア外：近接
-      if (!sub) continue;
+      if (keys.get(P.id) !== keys.get(L.id)) continue;
       // config.js の値はビット毎秒なので、8で割ってバイト毎秒にする
       if (P.audio) bps += AUDIO_BPS / 8;
       if (P.screen) bps += SCREEN_BPS / 8;
