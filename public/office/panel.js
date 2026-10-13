@@ -503,7 +503,9 @@ let unreadChat = 0;
 // ── スマホの画面（mobile.js） ──
 // 幅が狭いときは、左メニューをチャット専用の全画面シートとして出し入れする（style.css の @media）。
 // シートを閉じている間はチャットが見えないので、畳んでいるときと同じく未読を数える。
-const MOBILE_QUERY = "(max-width: 760px)";
+// 縦持ちの幅が狭い画面に加えて、スマホを横に持ったとき（高さが低く、指で操作する）もスマホの画面にする。
+// style.css の @media と同じ条件にしておくこと。
+const MOBILE_QUERY = "(max-width: 760px), (max-height: 500px) and (pointer: coarse)";
 let mobileSheetOpen = false;
 export function isMobileLayout() {
 	return window.matchMedia(MOBILE_QUERY).matches;

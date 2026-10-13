@@ -1667,17 +1667,103 @@ textarea {
 #m-bar,
 #m-menu,
 #m-pop,
+.m-share-tools,
 #rail #m-close {
 	display: none;
 }
 
-@media (max-width: 760px) {
+/* 条件は office/panel.js の MOBILE_QUERY と同じ。スマホを横に持ったとき（高さが低く、指で操作する）も含める */
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
 	:root {
 		--m-bar: 112px;   /* 下の帯の高さ（ホームバーの分は別に足す） */
 	}
 
+	html,
+	body {
+		height: 100%;
+		overflow: hidden;   /* ページ自体はスクロールさせない（キーボードで押し上げられたままにならないように） */
+	}
+
 	body {
 		overscroll-behavior: none;   /* 引っぱってページごと動くのを防ぐ */
+	}
+
+	/* 共有画面の拡大は、下の帯も覆って画面いっぱいに出す。
+	   拡大は #stage の中にあり、#stage の外（下の帯）へは広がれないので、拡大している間だけ
+	   #stage ごと画面の下端まで伸ばし、下の帯より手前に出す */
+	#stage:has(#share-big.on) {
+		bottom: 0;
+		z-index: 80;
+	}
+
+	#share-big {
+		background: #000;
+	}
+
+	#share-big .share-big-box {
+		width: 100vw;
+	}
+
+	#share-big video {
+		width: 100%;
+		border: none;
+		border-radius: 0;
+		box-shadow: none;
+	}
+
+	/* ⟳ で 90 度回した横向きの全画面。枠ごと回すので、上に重ねたボタンも一緒に回る */
+	#share-big.rot .share-big-box {
+		width: 100dvh;
+		height: 100vw;
+		flex: none;
+		transform: rotate(90deg);
+	}
+
+	#share-big.rot video {
+		height: 100%;
+		aspect-ratio: auto;
+	}
+
+	.m-share-tools {
+		display: block;
+		line-height: normal;
+	}
+
+	.m-share-btn {
+		position: absolute;
+		width: 44px;
+		height: 44px;
+		border: 2px solid rgba(255, 255, 255, 0.85);
+		border-radius: 50%;
+		background: rgba(20, 24, 21, 0.6);
+		color: #fff;
+		font-size: 22px;
+		line-height: 1;
+	}
+
+	#m-share-close {
+		top: 10px;
+		right: 10px;
+	}
+
+	#m-share-rotate {
+		top: 10px;
+		right: 62px;
+	}
+
+	/* マイクは右下。映像の上でも見えるよう少し小さくして影を付ける */
+	#m-share-mic {
+		position: absolute;
+		right: 12px;
+		bottom: 12px;
+		width: 64px;
+		height: 64px;
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+	}
+
+	/* 縦のときは、映像の枠ではなく画面の端にボタンを置く（映像は横長で上下が空くため） */
+	#share-big:not(.rot) .share-big-box {
+		position: static;
 	}
 
 	#admin,

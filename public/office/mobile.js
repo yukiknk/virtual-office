@@ -1,4 +1,4 @@
-// スマホ用の操作。画面の幅が狭いとき（style.css の @media (max-width: 760px)）だけ働く。
+// スマホ用の操作。スマホの画面（panel.js の MOBILE_QUERY。縦持ちで幅が狭い、または横持ち）のときだけ働く。
 //
 // PC の画面をそのまま使い、置き場所を CSS で変えている。ここが受け持つのは、
 // スマホにしか無い部品の動きだけ。
@@ -8,6 +8,8 @@
 //                  （マイクを押したり歩いたりしながらチャットできるように）
 //     勤務者一覧・音声の設定 … 左メニューにある本物のボタンを押す（それぞれの画面が開く）
 //   小窓の × （#m-close）… チャットを閉じる
+//   共有画面の拡大（#share-big）… 画面いっぱいに出し、横向きの切り替え・マイク・閉じるを重ねる
+//   キーボードを閉じたあと、ずれたままのページを元に戻す（iPhone）
 // マイクと退出も、左メニューにある本物のボタン（#mic-btn / #leave-btn）を押す。
 // 処理を二重に持たないためで、見た目もそのボタンから写す。
 import { isMobileLayout, setMobileSheet } from "./panel.js";
@@ -15,7 +17,10 @@ import { setJoystick } from "./move.js";
 
 export function initMobile() {
 	initSheet();
-	initMicMirror();
+	initMicMirror("m-mic");
+	initMicMirror("m-share-mic");
+	initShareView();
+	initKeyboardFix();
 	initLeave();
 	initJoystick();
 	// 画面共有を送れないブラウザ（iPhone の Safari など）では、共有のボタンを出さない
@@ -55,9 +60,9 @@ function initSheet() {
 
 // ── マイク ──
 // 本物のマイクのボタン（voice.js が状態に合わせて書き換える）を見張り、絵と ON の色を写す。
-function initMicMirror() {
+function initMicMirror(id) {
 	const src = document.getElementById("mic-btn");
-	const dst = document.getElementById("m-mic");
+	const dst = document.getElementById(id);
 	if (!src || !dst) return;
 	const copy = () => {
 		const ic = src.querySelector(".ic"), lb = src.querySelector(".lb");
@@ -68,7 +73,36 @@ function initMicMirror() {
 	};
 	new MutationObserver(copy).observe(src, { subtree: true, childList: true, characterData: true, attributes: true });
 	copy();
-	dst.addEventListener("click", () => src.click());
+	dst.addEventListener("click", (e) => { e.stopPropagation(); src.click(); });
+}
+
+// ── 共有画面の拡大 ──
+// スマホでは画面いっぱいに出す（style.css）。⟳ で 90 度回して横向きの全画面にする。
+// 画面の向きを固定している人でも、端末を横に持てば大きく見られるようにするため。
+// 拡大を閉じたら横向きも戻す。
+function initShareView() {
+	const big = document.getElementById("share-big");
+	const rot = document.getElementById("m-share-rotate");
+	const close = document.getElementById("m-share-close");
+	if (!big) return;
+	if (rot) rot.addEventListener("click", (e) => { e.stopPropagation(); big.classList.toggle("rot"); });
+	// 拡大の外側を押すと閉じる作り（voice.js）なので、× はその外側を押したことにする
+	if (close) close.addEventListener("click", (e) => { e.stopPropagation(); big.click(); });
+	// 付いているときだけ外す。無条件に remove すると、それ自体がクラスの変更として通知され、無限に繰り返す
+	new MutationObserver(() => { if (!big.classList.contains("on") && big.classList.contains("rot")) big.classList.remove("rot"); })
+		.observe(big, { attributes: true, attributeFilter: ["class"] });
+}
+
+// ── キーボードを閉じたあとのずれ ──
+// iPhone では、入力欄を押してキーボードが出るとページ全体が上へ押し上げられ、
+// キーボードを閉じても戻らないことがある。入力欄から離れたら、いちばん上へ戻す。
+function initKeyboardFix() {
+	const typing = (el) => !!el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+	document.addEventListener("focusout", (e) => {
+		if (!isMobileLayout() || !typing(e.target)) return;
+		// 別の入力欄へ移っただけのときは戻さない（移った先の判定を待つ）
+		setTimeout(() => { if (!typing(document.activeElement)) window.scrollTo(0, 0); }, 80);
+	});
 }
 
 // ── 退出 ──
