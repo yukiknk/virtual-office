@@ -240,19 +240,32 @@ export function updateCallPrompt() {
 	const cap = document.createElement("span");
 	cap.className = "prompt-cap";
 	cap.textContent = "🔔 呼び出す";
-	el.replaceChildren(cap, ...targets.map((t) => {
+	// 押したボタンは10秒押せなくする（連打防止。サーバー側でも同じ相手を10秒は弾く）
+	const cool = (btn) => { btn.disabled = true; setTimeout(() => { btn.disabled = false; }, 10_000); };
+	const buttons = targets.map((t) => {
 		const btn = document.createElement("button");
 		btn.type = "button";
 		btn.className = "call-btn";
 		btn.textContent = t.name;
 		btn.title = `${t.name}さんを呼び出す`;
-		btn.addEventListener("click", () => {
-			sendCall(t.id);
-			btn.disabled = true;                                  // 連打防止（サーバー側でも弾く）
-			setTimeout(() => { btn.disabled = false; }, 10_000);
-		});
+		btn.addEventListener("click", () => { sendCall(t.id); cool(btn); });
 		return btn;
-	}));
+	});
+	// 2人以上いるときだけ「全員」を先頭に置く。並んでいる全員を一度に呼び出す
+	if (targets.length >= 2) {
+		const all = document.createElement("button");
+		all.type = "button";
+		all.className = "call-btn all";
+		all.textContent = "全員";
+		all.title = `${targets.map((t) => t.name).join("、")}さんを呼び出す`;
+		all.addEventListener("click", () => {
+			for (const t of targets) sendCall(t.id);
+			cool(all);
+			for (const b of buttons) cool(b);
+		});
+		buttons.unshift(all);
+	}
+	el.replaceChildren(cap, ...buttons);
 	el.hidden = false;
 }
 
