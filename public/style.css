@@ -1696,6 +1696,18 @@ textarea {
 		z-index: 80;
 	}
 
+	/* 音声の設定・勤務者一覧などの画面も #stage の中にあるので、開いている間は同じく
+	   #stage ごと下の帯より手前に出す（横向きでは下の帯がマップに重なっていて、画面を覆っていた） */
+	#stage:has(#audio-modal.open, #people-modal.open, #away-modal.open) {
+		bottom: 0;
+		z-index: 80;
+	}
+
+	#audio-modal .cmodal-box,
+	#people-modal .cmodal-box {
+		max-height: calc(100dvh - 24px);
+	}
+
 	#share-big {
 		background: #000;
 	}
@@ -2116,12 +2128,61 @@ textarea {
 		right: calc(10px + env(safe-area-inset-right));
 	}
 
+	/* チャットは右側に縦長に出す（高さの低い横向きでは、上から下まで使わないと読めない）。
+	   マイクと退出の上で止める */
 	#rail {
 		left: auto;
 		right: calc(12px + env(safe-area-inset-right));
-		top: 64px;
+		top: 8px;
 		bottom: calc(84px + env(safe-area-inset-bottom));
-		width: min(360px, 46vw);
+		width: min(380px, 48vw);
 		height: auto;
+		padding: 8px 10px;
+	}
+
+	#rail .rail-sub {
+		margin-bottom: 4px;
+		font-size: 14px;
+	}
+
+	#rail #m-close {
+		top: 4px;
+		right: 4px;
+		width: 32px;
+		height: 32px;
+		font-size: 18px;
+	}
+
+	/* 横向きは高さが低いので、設定などの画面の余白を詰める */
+	#audio-modal .cmodal-box,
+	#people-modal .cmodal-box {
+		padding: 12px 16px;
+		gap: 8px;
+	}
+
+	/* 音声の設定は、マイク（左）とスピーカー（右）を横に並べ、縦に収める。
+	   子要素の順: 見出し / マイクの欄・テスト・注記 / スピーカーの欄・テスト・注記 / 閉じる（office.html） */
+	#audio-modal .cmodal-box {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		column-gap: 20px;
+		align-content: start;
+		width: min(92vw, 680px);
+	}
+
+	#audio-modal .cmodal-head,
+	#audio-modal .cmodal-foot {
+		grid-column: 1 / -1;
+	}
+
+	#audio-modal .cmodal-box > :nth-child(2) { grid-area: 2 / 1; }
+	#audio-modal .cmodal-box > :nth-child(3) { grid-area: 3 / 1; }
+	#audio-modal .cmodal-box > :nth-child(4) { grid-area: 4 / 1; }
+	#audio-modal .cmodal-box > :nth-child(5) { grid-area: 2 / 2; }
+	#audio-modal .cmodal-box > :nth-child(6) { grid-area: 3 / 2; }
+	#audio-modal .cmodal-box > :nth-child(7) { grid-area: 4 / 2; }
+
+	#audio-modal .au-note {
+		margin: 0;
 	}
 }

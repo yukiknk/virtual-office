@@ -108,11 +108,33 @@ function initKeyboardFix() {
 		setTimeout(() => { if (!typing(document.activeElement)) reset(); }, 80);
 	});
 	const vv = window.visualViewport;
-	if (vv) vv.addEventListener("resize", () => {
+	if (!vv) return;
+	const onChange = () => {
+		fitChatToKeyboard();
 		if (!isMobileLayout()) return;
 		// キーボードが閉じると、見えている範囲が画面の高さに戻る（少しの差はアドレスバーの出入り）
 		if (vv.height >= window.innerHeight - 60) setTimeout(reset, 50);
-	});
+	};
+	vv.addEventListener("resize", onChange);
+	vv.addEventListener("scroll", onChange);
+}
+
+// キーボードが出ている間は、チャットの小窓を「キーボードの上に見えている範囲」に収める。
+// 特に横向きでは、キーボードが画面の半分以上を覆い、小窓の入力欄が隠れていた。
+// キーボードが閉じたら、style.css の置き場所に戻す。
+function fitChatToKeyboard() {
+	const vv = window.visualViewport;
+	const rail = document.getElementById("rail");
+	if (!vv || !rail) return;
+	const open = isMobileLayout() && document.getElementById("admin").classList.contains("m-sheet-open");
+	const keyboard = window.innerHeight - vv.height > 80;
+	if (open && keyboard) {
+		rail.style.top = `${Math.round(vv.offsetTop + 6)}px`;
+		rail.style.bottom = "auto";
+		rail.style.height = `${Math.round(vv.height - 12)}px`;
+	} else {
+		rail.style.top = rail.style.bottom = rail.style.height = "";
+	}
 }
 
 // ── 退出 ──
