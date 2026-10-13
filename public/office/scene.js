@@ -347,9 +347,10 @@ function drawWallsAndActors() {
 			const dx = b[b.length - 1].x - b[b.length - 2].x, dy = b[b.length - 1].y - b[b.length - 2].y;
 			if (Math.hypot(dx, dy) > 1) { moving = true; o.dir = faceDir(dx, dy); }
 		}
-		actors.push({ id, x: p.x, y: p.y, name: o.name, color: "#b23a2a", away: o.away, awayMsg: o.awayMsg, talk: o.talk, dir: o.dir || "down", moving, avatar: o.avatar || DEFAULT_AVATAR });
+		// 話している人はマイクが ON のはず。マイクの状態を送らない古い画面の人も、話していれば ON と見せる
+		actors.push({ id, x: p.x, y: p.y, name: o.name, color: "#b23a2a", away: o.away, awayMsg: o.awayMsg, talk: o.talk, mic: !!(o.mic || o.talk), dir: o.dir || "down", moving, avatar: o.avatar || DEFAULT_AVATAR });
 	}
-	actors.push({ x: store.me.x, y: store.me.y, name: store.me.name, color: "#1f3fb0", away: store.me.away, awayMsg: store.me.awayMsg, talk: store.me.talking, dir: store.me.dir, moving: store.me.moving, avatar: store.me.avatar });
+	actors.push({ x: store.me.x, y: store.me.y, name: store.me.name, color: "#1f3fb0", away: store.me.away, awayMsg: store.me.awayMsg, talk: store.me.talking, mic: !!store.me.mic, dir: store.me.dir, moving: store.me.moving, avatar: store.me.avatar });
 	actors.sort((a, b) => a.y - b.y);   // 南（下）にいる人ほど後に描く＝手前になる
 	lastActors = actors;
 	lastGroups = groupActors(actors);
@@ -529,7 +530,7 @@ function drawActorLabels(a) {
 	}
 	if (a.group) return;
 	const top = w2s(a.x, labelTopY(a));
-	const p = drawPillAt(top.x, top.y - u(6), a.name, a.color, a.away, false);
+	const p = drawPillAt(top.x, top.y - u(6), a.name, a.color, a.away, false, a.mic);
 	// 吹き出しは名前の隣。まとまりのときと同じ位置関係にして、名前とも重ならないようにする
 	if (a.talk && !a.away) placeBubble(p.cx - p.w / 2, p.cx + p.w / 2, p.cy);
 }
@@ -565,6 +566,42 @@ const LABEL_FAMILY = "'M PLUS Rounded 1c', system-ui, 'Noto Sans JP', sans-serif
 function pillFont() { return `500 ${u(12)}px ${LABEL_FAMILY}`; }
 const PILL_H = 20;      // 名前ラベルの高さ（倍率 1 のとき。使うときは u() を通す）
 const PILL_PAD = 9;     // 名前ラベルの左右の余白（同上）
+const MIC_W = 12;       // 名前の左に付けるマイクの印の幅（同上）。印と名前のあいだは MIC_GAP
+const MIC_GAP = 3;
+
+// 名前ラベルの幅（印・名前・余白の合計）。ctx.font が pillFont() になっていること。
+// まとまりの判定（groupActors）と描画（drawPillAt）で同じ幅を使うため、ここ1か所で計算する。
+function pillWidth(name) {
+	return ctx.measureText(name).width + u(PILL_PAD) * 2 + u(MIC_W + MIC_GAP);
+}
+
+// マイクの印。cx / cy は印の中心（画面座標）。
+//   ON  … 緑のマイク
+//   OFF … 灰色のマイクに赤い斜線（ミュート中・マイクを使っていない・離席中）
+function drawMicIcon(cx, cy, on) {
+	const s = u(1);
+	ctx.save();
+	ctx.lineCap = "round";
+	ctx.strokeStyle = ctx.fillStyle = on ? "#2a7d3f" : "#8a9086";
+	ctx.beginPath();
+	ctx.roundRect(cx - 2.5 * s, cy - 5.5 * s, 5 * s, 7.5 * s, 2.5 * s);   // 頭
+	ctx.fill();
+	ctx.lineWidth = Math.max(1, 1.3 * s);
+	ctx.beginPath();
+	ctx.arc(cx, cy - 0.5 * s, 4.2 * s, 0.15 * Math.PI, 0.85 * Math.PI);    // 受け
+	ctx.moveTo(cx, cy + 3.7 * s);
+	ctx.lineTo(cx, cy + 5.5 * s);                                          // 柄
+	ctx.stroke();
+	if (!on) {
+		ctx.strokeStyle = "#c2412d";
+		ctx.lineWidth = Math.max(1, 1.6 * s);
+		ctx.beginPath();
+		ctx.moveTo(cx - 5 * s, cy - 5.5 * s);
+		ctx.lineTo(cx + 5 * s, cy + 5.5 * s);
+		ctx.stroke();
+	}
+	ctx.restore();
+}
 
 // 名前ラベルが重なる人どうしをまとめる。2人以上のまとまりだけを返し、
 // 属している人には a.group を付ける（drawActorLabels が個別の名前を描かない目印）。
@@ -577,7 +614,7 @@ function groupActors(actors) {
 	ctx.font = pillFont();
 	const items = actors.map((a) => {
 		const top = w2s(a.x, labelTopY(a));
-		return { a, cx: top.x, cy: top.y - u(6), w: ctx.measureText(a.name).width + u(PILL_PAD) * 2 };
+		return { a, cx: top.x, cy: top.y - u(6), w: pillWidth(a.name) };
 	});
 	ctx.restore();
 
@@ -634,7 +671,7 @@ function drawGroupLabel(g) {
 		const total = widthOf(row);
 		let x = cx - total / 2;
 		for (const m of row) {
-			drawPillAt(x + m.w / 2, y, m.a.name, m.a.color, m.a.away, talking(m));
+			drawPillAt(x + m.w / 2, y, m.a.name, m.a.color, m.a.away, talking(m), m.a.mic);
 			x += m.w + GAP;
 		}
 		if (r === 0) topRow = { left: cx - total / 2, right: cx + total / 2, y };   // 吹き出しは一番上の段の隣
@@ -674,15 +711,16 @@ function drawBubbleAt(x0, yc) {
 
 // 名前の角丸ラベル。cx / cy は中心（画面座標）。
 // talking が true のときは枠を緑で太くする（まとまりの中で誰が話しているかの印）。
+// 名前の左にマイクの印（mic が true なら ON）を付ける。
 // 画面の外へ出る場合は中へ押し戻し、実際に描いた位置を返す。
-function drawPillAt(cx, cy, name, color, away, talking) {
+function drawPillAt(cx, cy, name, color, away, talking, mic) {
 	ctx.save();
 	if (away) ctx.globalAlpha = 0.6;
 	ctx.font = pillFont();
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
 	const h = u(PILL_H);
-	const w = ctx.measureText(name).width + u(PILL_PAD) * 2;
+	const w = pillWidth(name);
 	cx = fitX(cx, w);   // マップの端にいても、名前が外へはみ出さないようにする
 	cy = fitY(cy, h);
 	ctx.shadowColor = "rgba(0,0,0,0.28)"; ctx.shadowBlur = u(4); ctx.shadowOffsetY = 1;
@@ -693,8 +731,10 @@ function drawPillAt(cx, cy, name, color, away, talking) {
 	ctx.lineWidth = Math.max(1, u(talking ? 2.5 : 1.5));   // 枠は 1px より細くしない（かすれて見えなくなる）
 	ctx.strokeStyle = talking ? "#2a7d3f" : color;
 	ctx.stroke();
+	const left = cx - w / 2 + u(PILL_PAD);
+	drawMicIcon(left + u(MIC_W) / 2, cy, !!mic && !away);
 	ctx.fillStyle = "#141815";
-	ctx.fillText(name, cx, cy + 0.5);
+	ctx.fillText(name, cx + u(MIC_W + MIC_GAP) / 2, cy + 0.5);   // 印のぶん右へずらす
 	ctx.restore();   // font・文字の揃え・globalAlpha はここで呼び出し元の値に戻る
 	return { w, cx, cy };   // 実際に描いた位置と幅。呼び出し元が隣に吹き出しを置くのに使う
 }

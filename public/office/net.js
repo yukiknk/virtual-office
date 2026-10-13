@@ -127,6 +127,7 @@ function onState(msg) {
 		o.away = !!u.away;
 		o.awayMsg = u.awayMsg || "";
 		o.talk = !!u.talk;   // 話しているか（アバターに吹き出しを出す）
+		o.mic = !!u.mic;     // マイクが ON か（名前ラベルに印を出す）
 		if (u.avatar) o.avatar = u.avatar;   // 未設定の人の情報で既存の値を消さない
 		// 受信時刻つきで積む。scene.js が過去2点の間を補間して滑らかに動かす。
 		o.buf.push({ at: now, x: u.x, y: u.y });
@@ -147,8 +148,9 @@ function onCalled(msg) {
 	pushCallLog(`${hhmm(msg.at)} に${msg.name}さんから呼び出しがありました`);
 }
 
-// 自分が呼び出した控え（音は鳴らさない）
+// 自分が呼び出した控え。呼んだ側にも同じ音を鳴らす（呼び出せたことが音で分かるように）
 function onCallSent(msg) {
+	playAlarm();
 	pushCallLog(`${hhmm(msg.at)} に${msg.name}さんを呼び出しました`);
 }
 
