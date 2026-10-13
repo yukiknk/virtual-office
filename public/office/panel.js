@@ -10,7 +10,7 @@
 //
 // 参照する要素の id は office.html にある。id を変えると片方だけ壊れる。
 import { GRID, WORLD } from "../map.js";
-import { store, zoneIdAt } from "./store.js";
+import { store, zoneIdAt, talkPeers } from "./store.js";
 import { sendComment, sendChat, sendAway, sendCall } from "./net.js";
 import { stopMoving } from "./move.js";
 import { updateVoice } from "./voice.js";
@@ -240,19 +240,32 @@ export function updateCallPrompt() {
 	const cap = document.createElement("span");
 	cap.className = "prompt-cap";
 	cap.textContent = "🔔 呼び出す";
-	el.replaceChildren(cap, ...targets.map((t) => {
+	// 押したボタンは10秒押せなくする（連打防止。サーバー側でも同じ相手を10秒は弾く）
+	const cool = (btn) => { btn.disabled = true; setTimeout(() => { btn.disabled = false; }, 10_000); };
+	const buttons = targets.map((t) => {
 		const btn = document.createElement("button");
 		btn.type = "button";
 		btn.className = "call-btn";
 		btn.textContent = t.name;
 		btn.title = `${t.name}さんを呼び出す`;
-		btn.addEventListener("click", () => {
-			sendCall(t.id);
-			btn.disabled = true;                                  // 連打防止（サーバー側でも弾く）
-			setTimeout(() => { btn.disabled = false; }, 10_000);
-		});
+		btn.addEventListener("click", () => { sendCall(t.id); cool(btn); });
 		return btn;
-	}));
+	});
+	// 2人以上いるときだけ「近くの全員」を先頭に置く。並んでいる全員を一度に呼び出す
+	if (targets.length >= 2) {
+		const all = document.createElement("button");
+		all.type = "button";
+		all.className = "call-btn all";
+		all.textContent = "近くの全員";
+		all.title = `${targets.map((t) => t.name).join("、")}さんを呼び出す`;
+		all.addEventListener("click", () => {
+			for (const t of targets) sendCall(t.id);
+			cool(all);
+			for (const b of buttons) cool(b);
+		});
+		buttons.unshift(all);
+	}
+	el.replaceChildren(cap, ...buttons);
 	el.hidden = false;
 }
 
@@ -270,7 +283,7 @@ export function updateCallAlert() {
 
 // ── 在室者リスト（左メニュー）──
 // 会話エリアごとに中の人をまとめる。エリア外にいるときは、いま会話できる
-// 「近くの人」（同じくエリア外で半径NEAR以内）を自分視点でまとめて表示する。
+// 「近くの人」（エリア外で同じ会話にいる人。決まりは ../talk.js）を自分視点でまとめて表示する。
 //
 // つまり「いま自分の声が届く相手」の一覧であって、接続者の一覧ではない。
 // 接続者の全員を見るのは勤務者一覧（下）のほう。
@@ -288,18 +301,13 @@ export function updateRoster() {
 
 // いま自分と同じ範囲にいる人（自分を除く）。声とチャットが届く相手。
 //
-// 会話エリアの中にいれば同じエリアの人、外にいれば半径 NEAR 以内でエリア外の人。
-// サーバーがチャットを配る条件（src/room.js の relayChat）と同じ式で、離席中の人も含む。
+// 会話エリアの中にいれば同じエリアの人、外にいれば近くの人と名前がまとまって表示される人（決まりは ../talk.js）。
+// サーバーがチャットを配る相手（src/room.js の relayChat）と同じで、離席中の人も含む。
 // 戻り値の zone は自分がいる会話エリア（外にいれば null）。
 function myGroup() {
 	const myZone = zoneIdAt(store.me.x, store.me.y);
 	const names = [];
-	for (const o of store.others.values()) {
-		const p = o.buf[o.buf.length - 1];
-		if (!p) continue;
-		const oz = zoneIdAt(p.x, p.y);
-		if (myZone ? oz === myZone : (oz === null && Math.hypot(p.x - store.me.x, p.y - store.me.y) <= NEAR)) names.push(o.name);
-	}
+	for (const id of talkPeers()) { const o = store.others.get(id); if (o) names.push(o.name); }
 	const zone = myZone ? (store.zones.find((z) => z.id === myZone) || { name: "会話エリア" }) : null;
 	return { zone, names };
 }

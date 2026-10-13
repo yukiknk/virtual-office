@@ -1335,6 +1335,12 @@ textarea {
 	filter: brightness(0.96);
 }
 
+.call-btn.all {
+	background: #1f3fb0;
+	border-color: #1f3fb0;
+	color: #fff;
+}
+
 .call-btn:disabled {
 	opacity: 0.5;
 	cursor: default;

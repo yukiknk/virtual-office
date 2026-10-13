@@ -1,7 +1,7 @@
 // 音声と画面共有。相手と直接つながるのではなく、すべて SFU（Cloudflare Realtime）を経由する。
 //
-// 会話できる相手は位置で決まる。エリア内にいれば同じエリアの全員、
-// エリア外なら半径 NEAR 以内の人。判定は currentTargets が一手に引き受ける。
+// 会話できる相手は位置で決まる。エリア内にいれば同じエリアの全員、エリア外なら近くの人と、
+// 名前がまとまって表示される人（決まりは ../talk.js）。判定は currentTargets が一手に引き受ける。
 //
 // RTCPeerConnection を2本持っているのがこのファイルの肝。
 //   sfuPc    … 自分のマイクを送り、相手の音声と画面を受け取る
@@ -9,13 +9,10 @@
 // 1本にまとめると、送信と受信の SDP のやりとりが重なったときに衝突する。
 //
 // 転送量が増えると、まず画面共有、次に音声の順に止まる（applyBudget）。
-import { store, zoneIdAt } from "./store.js";
-import { GRID } from "../map.js";
+import { store, talkPeers } from "./store.js";
 import { openMic, micIdOf, startLevelMeter, startTalkDetector, getSilentTrack } from "../devices.js";
 import { KEY, write } from "../storage.js";
 
-// エリア外での会話範囲。panel.js と src/config.js にも同じ値がある（変えるときは3か所）。
-const NEAR = GRID * 2;
 
 // マイクを閉じるまでの猶予。
 // Bluetooth はマイクの開閉のたびにプロファイルが切り替わり、1〜2秒ほど双方向で
@@ -316,23 +313,11 @@ function wantsAny(targets) {
 	return false;
 }
 
-// いま会話すべき相手（エリア内=同エリア / エリア外=近接）。
-// この条件は src/room.js がチャットを配る条件と同じ式。声とチャットが同じ範囲に
-// 届くようにするためだが、コードは別々に書かれているので片方だけ変えないこと。
+// いま会話すべき相手。決まりは talk.js（エリア内は同じエリア、外は近く・名前のまとまり）で、
+// サーバーがチャットを配る相手と同じ。離席中の人とは声をつながない。
 function currentTargets() {
-	const myZone = zoneIdAt(store.me.x, store.me.y);
-	const ids = new Set();
-	for (const [id, o] of store.others) {
-		const last = o.buf[o.buf.length - 1];
-		if (!last) continue;
-		if (o.away) continue;   // 離席中の人とは接触しない
-		const oz = zoneIdAt(last.x, last.y);
-		if (myZone) {
-			if (oz === myZone) ids.add(id);
-		} else if (oz === null && Math.hypot(last.x - store.me.x, last.y - store.me.y) <= NEAR) {
-			ids.add(id);
-		}
-	}
+	const ids = talkPeers();
+	for (const id of [...ids]) { const o = store.others.get(id); if (!o || o.away) ids.delete(id); }
 	return ids;
 }
 

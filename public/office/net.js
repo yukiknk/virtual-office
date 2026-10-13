@@ -149,8 +149,11 @@ function onCalled(msg) {
 }
 
 // 自分が呼び出した控え。呼んだ側にも同じ音を鳴らす（呼び出せたことが音で分かるように）
+// 「全員」で呼び出すと控えが人数ぶん続けて届くので、音は最初の1回だけ鳴らす
+let callSentSoundAt = 0;
 function onCallSent(msg) {
-	playAlarm();
+	const now = Date.now();
+	if (now - callSentSoundAt > 3000) { callSentSoundAt = now; playAlarm(); }
 	pushCallLog(`${hhmm(msg.at)} に${msg.name}さんを呼び出しました`);
 }
 
