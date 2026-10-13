@@ -17,6 +17,8 @@
     "tail:beta": "wrangler tail --env beta",
     "kv:create-beta": "wrangler kv namespace create LAYOUT_KV --env beta",
     "kv:copy-to-beta": "node scripts/copy-kv-to-beta.mjs",
+    "layout:export": "node scripts/layout-transfer.mjs export",
+    "layout:import": "node scripts/layout-transfer.mjs import",
     "secret:beta": "wrangler secret put --env beta",
     "avatar-manifest": "node scripts/gen-avatar-manifest.mjs",
     "credits": "node scripts/gen-credits.mjs"

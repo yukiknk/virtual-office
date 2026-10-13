@@ -25,3 +25,6 @@ Claude outputs/
 
 # Claude 向けの個人用指示（個人のフォルダ構成を含むためコミットしない）
 CLAUDE.md
+
+# レイアウトの書き出し（scripts/layout-transfer.mjs）。組織のマップなのでリポジトリに入れない
+layout-backup-*/
