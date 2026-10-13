@@ -4,6 +4,8 @@
 組織の Cloudflare アカウントと組織の GitHub へ移す作業の手順書。
 
 - 前提: Windows + PowerShell、作業する人は開発担当（1名で完結できる）
+- 作業する PC: 移行後は**業務用 PC** で開発・デプロイする。個人の PC は、個人のアカウント（GitHub・Cloudflare）が要る作業と、
+  コード一式を zip にして業務用 NAS へ置く作業だけに使う。業務用 PC では個人のアカウントにログインしない
 - 想定所要時間: 準備（2〜4）は 1〜2 時間。当日の切り替え（5）は 30 分ほど
 - 方針
   - コード: 移行の時点までを個人リポジトリで公開し、以降は組織の GitHub（非公開）で管理する
@@ -15,16 +17,17 @@
 
 ## 0. 全体の流れ
 
-| 順番 | 内容 | いつ |
-|---|---|---|
-| 1 | 会議で決めること | 最初に |
-| 2 | リポジトリを組織の GitHub へ移し、個人リポジトリを公開する | 準備（いつでも） |
-| 3 | 作業 PC の準備 | 準備 |
-| 4 | 組織の Cloudflare アカウントの準備 | 準備 |
-| 5 | 切り替え（書き出し → 新環境へデプロイ → 書き込み → 周知 → 旧環境を止める） | 移行日（通話の少ない時間帯） |
-| 6 | 移行後の運用 | 以降ずっと |
+| 順番 | 内容 | どこで | いつ |
+|---|---|---|---|
+| 1 | 会議で決めること | — | 最初に |
+| 2 | 個人リポジトリを仕上げて公開し、コード一式を zip で業務用 NAS へ置く | 個人 PC | 準備 |
+| 3 | 業務用 PC の準備と、組織の GitHub への登録 | 業務用 PC | 準備 |
+| 4 | 組織の Cloudflare アカウントの準備 | 業務用 PC | 準備 |
+| 5 | 切り替え（書き出し → 新環境へデプロイ → 書き込み → 周知） | 業務用 PC | 移行日（通話の少ない時間帯） |
+| 6 | 旧環境を止める | 個人 PC | 移行日（新環境が動いてから） |
+| 7 | 移行後の運用 | 業務用 PC | 以降ずっと |
 
-2〜4 は利用者に影響しない。利用者に影響するのは 5 だけ。
+2〜4 は利用者に影響しない。利用者に影響するのは 5 と 6 だけ。
 
 ---
 
@@ -36,11 +39,11 @@
 | **Cloudflare アカウントの管理者** | 2名以上が望ましい |
 | **組織の GitHub の置き場所と権限** | リポジトリを作る組織（Organization）と、書き込める人 |
 | **移行日時** | 切り替えの間、数分〜十数分使えない時間がある。通話の少ない時間帯にする |
-| **独自ドメインを使うか** | 使うなら後からでよい（7 を参照） |
+| **独自ドメインを使うか** | 使うなら後からでよい（8 を参照） |
 
 ---
 
-## 2. リポジトリ
+## 2. 個人 PC でやること（移行前）
 
 ### 2-1. 公開してよいかを確かめる
 
@@ -61,55 +64,86 @@ git log --all -p -S"hooks.slack.com/services/T" --oneline
 
 組織名など、ほかに気になる言葉があれば `-S"言葉"` で同じように探す。
 
-### 2-2. 組織の GitHub に非公開リポジトリを作って移す
+### 2-2. 個人リポジトリを仕上げて公開する
 
-1. 組織の GitHub で、空の**非公開**リポジトリを作る（README などは作らない）
-2. 手元のリポジトリから、ブランチとタグをすべて送る
+1. 未コミットの変更が無いこと、main がプッシュ済みであることを確かめる（`git status`）
+2. GitHub の個人リポジトリの Settings → General → Danger Zone → **Change visibility** で Public にする
+
+この時点の内容が自分の成果として残る。以降はこちらを更新しない。
+
+### 2-3. コード一式を zip にして業務用 NAS へ置く
+
+履歴ごと移すため、`.git` フォルダも入れる。組織名の設定（`public/config.local.js`）も入れる。
+入れないもの: `node_modules`（業務用 PC で入れ直す）、`.wrangler`（キャッシュ）、`.dev.vars`（秘密の値）、
+`CLAUDE.md`（個人の作業用）、`Claude outputs`、`public/assets/avatar`（デプロイのたびに作り直される）。
+
+PowerShell を開き、下の6行をまとめて貼り付けて Enter を押す（どのフォルダで実行してもよい）。
 
 ```powershell
-cd C:\virtual_office
-git remote rename origin personal
-git remote add origin https://github.com/<組織>/<リポジトリ名>.git
-git push -u origin main
-git push origin --all
-git push origin --tags
+$date = Get-Date -Format yyyyMMdd
+$work = "$env:TEMP\virtual_office_$date"
+robocopy C:\virtual_office $work /E /XD node_modules .wrangler "Claude outputs" C:\virtual_office\public\assets\avatar /XF .dev.vars CLAUDE.md
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory($work, "$HOME\Desktop\virtual_office_$date.zip")
+Remove-Item -Recurse -Force $work
 ```
 
-これで、以降の `git push` は組織のリポジトリへ行く。個人リポジトリ（`personal`）へは送らない。
-
-### 2-3. 個人リポジトリを公開する
-
-GitHub の個人リポジトリの Settings → General → Danger Zone → **Change visibility** で Public にする。
-この時点の内容が自分の成果として残る。以降はこちらを更新しない。
+- 各行の意味: 日付を決める → 一時フォルダへ必要なものだけ写す → 一時フォルダを zip にする → 一時フォルダを消す
+- 終わるとデスクトップに `virtual_office_<日付>.zip` ができる。途中で `robocopy` がコピーした一覧を長く表示するが、正常
+- 生成物の `public/assets/avatar` はフルパスで外している。`avatar` とだけ書くと、元画像の `assets-src/avatar` まで外れてしまい、業務用 PC でアバターが作れなくなる
+- 圧縮に `Compress-Archive` を使わないのは、隠しフォルダの `.git` が抜けることがあるため
+- zip を作る前に、`MIGRATION.md` などの変更がコミット済みであることを確かめる（未コミットの変更も zip には入るが、履歴には残らない）
+- できた `virtual_office_<日付>.zip` を業務用 NAS へ置く
+- NAS は受け渡しのためだけに使う。NAS の上で展開して作業はしない（3-2 のとおり業務用 PC の中に展開する）
 
 ---
 
-## 3. 作業 PC の準備
-
-今の PC で続ける場合は 3-3 だけでよい。
+## 3. 業務用 PC でやること（準備）
 
 ### 3-1. Node.js と Git
 
-wrangler が **Node.js 20 以上**を要求する。
+```powershell
+node -v           # v20 以上なら OK（wrangler が Node.js 20 以上を要求する）
+git --version     # 何か表示されれば OK
+```
+
+入っていなければ入れる（入れたら PowerShell を開き直す）。インストールが制限されている場合は、情報システムの担当に依頼する。
 
 ```powershell
 winget install OpenJS.NodeJS.LTS
 winget install Git.Git
 ```
 
-PowerShell を開き直してから `node -v`（v20 以上）と `git --version` で確かめる。
+### 3-2. zip を展開して依存を入れる
 
-### 3-2. リポジトリを取ってきて依存を入れる
+NAS の zip を業務用 PC にコピーし、`C:\virtual_office` に展開する。
+作業は必ずこの PC の中のフォルダで行う。NAS の上で直接作業すると、`npm install`（数万ファイル）や git が遅く、
+ファイルのロックで失敗しやすい。移行後のコードの正本は組織の GitHub で、NAS の zip は受け渡しと控えにすぎない。
 
 ```powershell
-git clone https://github.com/<組織>/<リポジトリ名>.git C:\virtual_office
 cd C:\virtual_office
 npm install
+git status          # 履歴が見えること、変更が無いことを確かめる
 ```
 
-`public/config.local.js` はリポジトリに入っていないので、前の PC からコピーする（無いと「デモオフィス」と表示される）。
+`npm install` で `wrangler` と `sharp`（アバター画像の切り出し）が、その PC 用に入る。
 
-### 3-3. `.dev.vars`
+### 3-3. 組織の GitHub に非公開リポジトリを作って登録する
+
+1. 組織の GitHub で、空の**非公開**リポジトリを作る（README などは作らない）
+2. zip の中のリポジトリは、送り先が個人リポジトリになっている。組織のリポジトリに付け替えて、ブランチとタグをすべて送る
+
+```powershell
+git remote remove origin
+git remote add origin https://github.com/<組織>/<リポジトリ名>.git
+git push -u origin main
+git push origin --all
+git push origin --tags
+```
+
+以降の `git push` は組織のリポジトリへ行く。
+
+### 3-4. `.dev.vars`
 
 `.dev.vars.example` をコピーして `.dev.vars` にする。中身は 4-3 で取得した値（ローカルで動かすときだけ使う）。
 
@@ -131,17 +165,16 @@ npm install
 ダッシュボード → **Realtime** → アプリを作成。**App ID と App Secret を控える**（Secret は後から読めない）。
 控えはパスワード管理の仕組みなど、組織で決めた安全な場所に置く。git には入れない。
 
-### 4-4. wrangler を組織アカウントに切り替える
+### 4-4. wrangler を組織アカウントでログインする
 
 ```powershell
-npx wrangler whoami      # いまのアカウント
-npx wrangler logout      # 個人アカウントでログインしていれば
 npx wrangler login       # ブラウザで組織アカウントを承認
 npx wrangler whoami      # 組織アカウントになったか
 ```
 
-個人と組織の両方に同じメールアドレスで入れる場合、デプロイ先を聞かれることがある。
-間違えないよう、作業中は組織のアカウント ID を固定しておく:
+業務用 PC では個人アカウントにはログインしない。
+組織のアカウントに同じメールアドレスで複数入れる場合、デプロイ先を聞かれることがある。
+間違えないよう、組織のアカウント ID を固定しておく:
 
 ```powershell
 $env:CLOUDFLARE_ACCOUNT_ID = "組織アカウントのID"   # ダッシュボードの右側に出ている
@@ -179,7 +212,7 @@ npx wrangler secret put REALTIME_APP_SECRET --env beta
 
 ---
 
-## 5. 切り替え（移行日）
+## 5. 切り替え（移行日・業務用 PC）
 
 ### 5-1. 旧サイトのマップを書き出す
 
@@ -218,28 +251,25 @@ npm run layout:import -- https://virtual-office.<サブドメイン>.workers.dev
 - スマホでも使える（再読み込みは不要。新しい URL を開くだけ）
 - オフィスで作った看板は消えている（作り直し）
 
-### 5-5. 旧環境を止める
+## 6. 旧環境を止める（移行日・個人 PC）
 
-個人アカウントに切り替えて、旧サイトとベータの Worker を消す。
+**新サイトが動いていること、5-1 の書き出しが済んでいることを確かめてから**行う。元に戻せない。
 
 ```powershell
-$env:CLOUDFLARE_ACCOUNT_ID = ""      # 4-4 で固定した場合は外す
-npx wrangler logout
-npx wrangler login                    # 個人アカウントで承認
+cd C:\virtual_office
 npx wrangler whoami                   # 個人アカウントであることを必ず確かめる
 npx wrangler delete --name virtual-office
 npx wrangler delete --name virtual-office-beta
-npx wrangler logout
-npx wrangler login                    # 組織アカウントに戻す
 ```
 
-- `delete` すると、その Worker の部屋（Durable Object）のデータも消える。元に戻せない
+- `delete` すると、その Worker の部屋（Durable Object）のデータも消える
 - 個人アカウントの Realtime のアプリと KV も、ダッシュボードから消してよい
-- **消す前に、5-1 の書き出しが済んでいること、新サイトが動いていることを確かめる**
+- 個人 PC で wrangler が使えない場合は、個人アカウントでダッシュボードにログインし、
+  Workers & Pages → 各 Worker → Settings → Delete でも消せる
 
 ---
 
-## 6. 移行後の運用
+## 7. 移行後の運用（業務用 PC）
 
 変更を本番に出すまでの流れ（今までと同じ）:
 
@@ -266,7 +296,7 @@ git push --tags
 
 ---
 
-## 7. 独自ドメインを使う場合（任意・後からでよい）
+## 8. 独自ドメインを使う場合（任意・後からでよい）
 
 条件は「そのドメインの DNS を Cloudflare で管理していること」。
 
@@ -277,7 +307,7 @@ git push --tags
 
 ---
 
-## 8. 引き継ぎで必ず伝えること
+## 9. 引き継ぎで必ず伝えること
 
 ### 著作権・クレジット表示
 
@@ -306,7 +336,7 @@ Cloudflare 側の都合で、部屋（Durable Object）が数時間おきに作�
 
 ---
 
-## 9. つまずきやすいところ
+## 10. つまずきやすいところ
 
 | 症状 | 原因と対処 |
 |---|---|
@@ -318,3 +348,5 @@ Cloudflare 側の都合で、部屋（Durable Object）が数時間おきに作�
 | マップが空 | `layout:import` の書き込み先 URL とフォルダを確かめる |
 | アバターが丸で表示される | `assets-src/avatar/` が無い状態でデプロイした |
 | `git switch main` で error | 未コミットの変更がある。先にコミットするか、作業ブランチを作ってから移る |
+| 業務用 PC で `git status` が「not a git repository」 | zip に `.git` が入っていない。2-3 の手順で作り直す（エクスプローラーの「送る → 圧縮」や `Compress-Archive` では、隠しフォルダの `.git` が抜けることがある） |
+| 業務用 PC で `git push` を拒否される | 組織のリポジトリへの書き込み権限が無い。組織の GitHub の管理者に依頼する |
