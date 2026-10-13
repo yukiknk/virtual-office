@@ -9,7 +9,7 @@ import { store, SHEETS, DEFAULT_AVATAR } from "./store.js";
 import { sendComment, removeComment } from "./net.js";
 import { layerImg, drawAvatar } from "../avatar.js";
 import { faceDir, isBlockedBody, BODY_HALF } from "./move.js";
-import { openCommentModal } from "./panel.js";
+import { openCommentModal, isMobileLayout } from "./panel.js";
 
 const stage = document.getElementById("stage");
 const canvas = document.getElementById("plan");
@@ -73,6 +73,7 @@ export function initPointer() {
 	// オフィス作成の看板：×で削除、四隅ドラッグで拡大縮小、内部ドラッグで移動、クリックで再編集。
 	// 後ろから探すのは、重なっているとき手前の看板を先に拾うため（描画は前から＝後ろほど手前）。
 	canvas.addEventListener("pointerdown", (e) => {
+		if (e.pointerType === "touch") return;   // 指では看板を動かさない（スマホでは表示だけ）
 		const rect = canvas.getBoundingClientRect();
 		const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
 		const p = s2w(canvas, e.clientX, e.clientY);
@@ -101,6 +102,7 @@ export function initPointer() {
 	// ダブルクリックでその場所へ移動
 	canvas.addEventListener("dblclick", (e) => {
 		if (store.me.away) return;                       // 離席中は移動しない
+		if (isMobileLayout()) return;                    // スマホはジョイスティックで動く（誤タップで飛ばない）
 		const p = s2w(canvas, e.clientX, e.clientY);
 		for (const c of store.officeComments) if (!isExpired(c) && pointInRect(p, c)) return;   // 看板の上は対象外
 		const x = Math.max(BODY_HALF, Math.min(WORLD.w - BODY_HALF, p.x));
