@@ -54,6 +54,9 @@ let dragMoved = false;      // しきい値を超えて動かしたか
 // 「1px 動かした」と見なされて共有に化ける。
 export function initPointer() {
 	window.addEventListener("resize", fit);
+	// マップの枠の大きさが変わったら測り直す。スマホで向きを変えたときは、resize の時点では
+	// まだ枠の大きさが前のままのことがあり、自分が中央から外れて映っていた
+	if (window.ResizeObserver) new ResizeObserver(() => fit()).observe(stage);
 
 	// カーソル位置の記録＋看板の移動／リサイズ
 	canvas.addEventListener("pointermove", (e) => {

@@ -95,13 +95,23 @@ function initShareView() {
 
 // ── キーボードを閉じたあとのずれ ──
 // iPhone では、入力欄を押してキーボードが出るとページ全体が上へ押し上げられ、
-// キーボードを閉じても戻らないことがある。入力欄から離れたら、いちばん上へ戻す。
+// キーボードを閉じても戻らないことがある。2つの場合に、いちばん上へ戻す。
+//   入力欄から離れたとき（送信ボタンを押した、ほかの場所を触った）
+//   キーボードだけが閉じたとき（キーボードの「完了」や下へのスワイプ）。このときは入力欄から
+//   離れたことにならないので、見えている範囲（visualViewport）の高さが元に戻ったことで判定する
 function initKeyboardFix() {
 	const typing = (el) => !!el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+	const reset = () => { if (window.scrollY || document.documentElement.scrollTop) window.scrollTo(0, 0); };
 	document.addEventListener("focusout", (e) => {
 		if (!isMobileLayout() || !typing(e.target)) return;
 		// 別の入力欄へ移っただけのときは戻さない（移った先の判定を待つ）
-		setTimeout(() => { if (!typing(document.activeElement)) window.scrollTo(0, 0); }, 80);
+		setTimeout(() => { if (!typing(document.activeElement)) reset(); }, 80);
+	});
+	const vv = window.visualViewport;
+	if (vv) vv.addEventListener("resize", () => {
+		if (!isMobileLayout()) return;
+		// キーボードが閉じると、見えている範囲が画面の高さに戻る（少しの差はアドレスバーの出入り）
+		if (vv.height >= window.innerHeight - 60) setTimeout(reset, 50);
 	});
 }
 
