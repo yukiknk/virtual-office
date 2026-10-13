@@ -65,10 +65,7 @@ export function createRichEditor(host) {
 			<label class="rt-color" title="文字の色"><span>色</span><input type="color" class="rt-fg" value="${DEFAULT_COLOR}" /></label>
 			<label class="rt-color" title="マーカー（文字の背景色）"><span>マーカー</span><input type="color" class="rt-mk" value="${DEFAULT_MARKER}" /></label>
 			<button type="button" class="rt-btn rt-wide" data-act="unmark" title="マーカーを消す">消す</button>
-			<span class="rt-sep"></span>
-			<button type="button" class="rt-btn" data-align="left" title="左揃え"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 3.5h12M2 6.5h8M2 9.5h12M2 12.5h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button>
-			<button type="button" class="rt-btn" data-align="center" title="中央揃え"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 3.5h12M4 6.5h8M2 9.5h12M4 12.5h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button>
-			<button type="button" class="rt-btn" data-align="right" title="右揃え"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 3.5h12M6 6.5h8M2 9.5h12M6 12.5h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button>
+			<span class="rt-align" role="group" title="文字の揃え（看板全体）"><span>揃え</span><span class="rt-seg"><button type="button" class="rt-btn" data-align="left" title="左揃え"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 3.5h12M2 6.5h8M2 9.5h12M2 12.5h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button><button type="button" class="rt-btn" data-align="center" title="中央揃え"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 3.5h12M4 6.5h8M2 9.5h12M4 12.5h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button><button type="button" class="rt-btn" data-align="right" title="右揃え"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 3.5h12M6 6.5h8M2 9.5h12M6 12.5h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button></span></span>
 		</div>
 		<div class="rt-edit" contenteditable="true" spellcheck="false" data-placeholder="文字を入力する"></div>
 		<div class="rt-hint">文字を選んでからボタンを押すと、その部分だけ変わります</div>`;
