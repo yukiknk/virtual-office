@@ -1694,15 +1694,21 @@ textarea {
 		bottom: calc(var(--m-bar) + env(safe-area-inset-bottom));
 	}
 
-	/* 左メニューは、チャットだけを出す全画面のシートにする。閉じている間は隠す。
-	   在室者・勤務者一覧・離席・マイクなどは、下の帯と ☰ のメニューから使う */
+	/* 左メニューは、チャットだけを出す小窓にする。閉じている間は隠す。
+	   下の帯（マイク・ジョイスティック・退出）は覆わないので、チャットを開いたまま歩いたり
+	   マイクを切り替えたりできる。在室者・勤務者一覧・マイクなどは、下の帯と ☰ のメニューから使う */
 	#rail {
 		display: none;
 		position: fixed;
-		inset: 0;
-		z-index: 60;
-		border-right: none;
-		padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+		left: 12px;
+		right: 12px;
+		bottom: calc(var(--m-bar) + env(safe-area-inset-bottom) + 12px);
+		height: min(46dvh, calc(100dvh - var(--m-bar) - 90px));   /* 下の帯の上に、画面の半分ほど */
+		z-index: 40;
+		border: 2px solid #141815;
+		border-radius: 16px;
+		padding: 12px 12px 10px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 	}
 
 	#admin.m-sheet-open #rail {
@@ -1716,10 +1722,10 @@ textarea {
 	#rail #m-close {
 		display: block;
 		position: absolute;
-		top: 10px;
-		right: 10px;
-		width: 40px;
-		height: 40px;
+		top: 6px;
+		right: 6px;
+		width: 36px;
+		height: 36px;
 		margin: 0;
 		padding: 0;
 		border-radius: 50%;
@@ -1738,8 +1744,8 @@ textarea {
 	}
 
 	#rail .rail-sub {
-		margin: 6px 52px 10px 0;
-		font-size: 18px;
+		margin: 2px 44px 8px 0;
+		font-size: 16px;
 		font-weight: 700;
 		letter-spacing: 0;
 		color: #141815;
@@ -1748,7 +1754,11 @@ textarea {
 	/* チャット欄はシートの残りの高さを使う */
 	#chat-log {
 		flex: 1 1 auto;
-		min-height: 120px;
+		min-height: 80px;
+	}
+
+	#chat-form {
+		margin-bottom: 0;
 	}
 
 	/* iPhone は入力欄の文字が 16px 未満だと、触ったときに画面ごと拡大する */

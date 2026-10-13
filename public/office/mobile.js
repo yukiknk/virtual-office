@@ -4,9 +4,10 @@
 // スマホにしか無い部品の動きだけ。
 //   下の帯（#m-bar）   … 左にマイク、真ん中にジョイスティック、右に退出
 //   右上のボタン（#m-menu） … 小さなメニュー（#m-pop）を開く。チャットの未読を出す
-//     チャット   … 左メニュー（#rail）を、チャットだけの全画面シートとして開く
-//     勤務者一覧・音声の設定・離席 … 左メニューにある本物のボタンを押す（それぞれの画面が開く）
-//   シートの × （#m-close）… チャットのシートを閉じる
+//     チャット   … 左メニュー（#rail）を、チャットだけの小窓として開く。下の帯は隠さない
+//                  （マイクを押したり歩いたりしながらチャットできるように）
+//     勤務者一覧・音声の設定 … 左メニューにある本物のボタンを押す（それぞれの画面が開く）
+//   小窓の × （#m-close）… チャットを閉じる
 // マイクと退出も、左メニューにある本物のボタン（#mic-btn / #leave-btn）を押す。
 // 処理を二重に持たないためで、見た目もそのボタンから写す。
 import { isMobileLayout, setMobileSheet } from "./panel.js";
@@ -48,18 +49,8 @@ function initSheet() {
 		if (act === "chat") setMobileSheet(true);
 		else if (act === "people") press("people-btn");
 		else if (act === "audio") press("audio-settings-btn");
-		else if (act === "away") press("away-btn");
 	});
 	if (close) close.addEventListener("click", () => setMobileSheet(false));
-
-	// 離席の項目の文字を、本物のボタン（離席／着席で変わる）に合わせる
-	const away = document.getElementById("away-btn");
-	const label = pop.querySelector(".m-away-label");
-	if (away && label) {
-		const copy = () => { label.textContent = away.title || "離席"; };
-		new MutationObserver(copy).observe(away, { attributes: true, subtree: true, childList: true, characterData: true });
-		copy();
-	}
 }
 
 // ── マイク ──
@@ -121,7 +112,7 @@ function initJoystick() {
 	base.addEventListener("pointerdown", (e) => {
 		if (pid !== null) return;
 		pid = e.pointerId;
-		base.setPointerCapture(e.pointerId);   // 丸の外へ指が出ても追い続ける
+		try { base.setPointerCapture(e.pointerId); } catch { }   // 丸の外へ指が出ても追い続ける
 		base.classList.add("active");
 		move(e);
 		e.preventDefault();

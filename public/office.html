@@ -109,14 +109,13 @@
 		     style.css と、scene.js / admin/editor.js が同じ名前で取得している。 -->
 		<section id="stage">
 			<div id="banner"></div>   <!-- 音声・画面共有の状態表示（voice.js） -->
-			<!-- スマホのときだけ出る。押すと小さなメニューが開き、チャット・勤務者一覧・音声の設定・離席を
+			<!-- スマホのときだけ出る。押すと小さなメニューが開き、チャット・勤務者一覧・音声の設定を
 			     それぞれ単独で開ける（mobile.js）。チャットの未読数を ☰ とチャットの項目に出す -->
 			<button type="button" id="m-menu" aria-label="メニュー" aria-expanded="false">☰<span class="badge" hidden></span></button>
 			<div id="m-pop" hidden>
 				<button type="button" data-act="chat"><span class="mi">💬</span>チャット<span class="badge" hidden></span></button>
 				<button type="button" data-act="people"><span class="mi">👥</span>勤務者一覧</button>
 				<button type="button" data-act="audio"><span class="mi">⚙</span>音声の設定</button>
-				<button type="button" data-act="away"><span class="mi">☕</span><span class="m-away-label">離席</span></button>
 			</div>
 
 			<!-- width/height は飾り。scene.js が起動直後に画面サイズから計算し直す。
