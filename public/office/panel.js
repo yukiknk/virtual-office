@@ -501,7 +501,7 @@ let railCollapsed = false;
 let unreadChat = 0;
 
 // ── スマホの画面（mobile.js） ──
-// 幅が狭いときは、左メニューを全画面のシートとして出し入れする（style.css の @media）。
+// 幅が狭いときは、左メニューをチャット専用の全画面シートとして出し入れする（style.css の @media）。
 // シートを閉じている間はチャットが見えないので、畳んでいるときと同じく未読を数える。
 const MOBILE_QUERY = "(max-width: 760px)";
 let mobileSheetOpen = false;
@@ -559,7 +559,7 @@ export function initRailToggle() {
 // 畳んでいる間に届いたチャットの数。チャットを開くボタンの右上に出す。
 function setUnread(n) {
 	unreadChat = n;
-	for (const badge of document.querySelectorAll("#chat-open-btn .badge, #m-menu .badge")) {
+	for (const badge of document.querySelectorAll("#chat-open-btn .badge, #m-menu .badge, #m-pop .badge")) {
 		badge.hidden = n === 0;
 		badge.textContent = n > 9 ? "9+" : String(n);
 	}

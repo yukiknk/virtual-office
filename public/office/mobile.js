@@ -3,9 +3,11 @@
 // PC の画面をそのまま使い、置き場所を CSS で変えている。ここが受け持つのは、
 // スマホにしか無い部品の動きだけ。
 //   下の帯（#m-bar）   … 左にマイク、真ん中にジョイスティック、右に退出
-//   右上のボタン（#m-menu） … 左メニュー（#rail）を全画面のシートとして開く。チャットの未読を出す
-//   シートの × （#m-close）… シートを閉じる
-// マイクと退出は、左メニューにある本物のボタン（#mic-btn / #leave-btn）を押す。
+//   右上のボタン（#m-menu） … 小さなメニュー（#m-pop）を開く。チャットの未読を出す
+//     チャット   … 左メニュー（#rail）を、チャットだけの全画面シートとして開く
+//     勤務者一覧・音声の設定・離席 … 左メニューにある本物のボタンを押す（それぞれの画面が開く）
+//   シートの × （#m-close）… チャットのシートを閉じる
+// マイクと退出も、左メニューにある本物のボタン（#mic-btn / #leave-btn）を押す。
 // 処理を二重に持たないためで、見た目もそのボタンから写す。
 import { isMobileLayout, setMobileSheet } from "./panel.js";
 import { setJoystick } from "./move.js";
@@ -22,12 +24,42 @@ export function initMobile() {
 	}
 }
 
-// ── 左メニューのシート ──
+// ── メニュー ──
 function initSheet() {
-	const open = document.getElementById("m-menu");
+	const btn = document.getElementById("m-menu");
+	const pop = document.getElementById("m-pop");
 	const close = document.getElementById("m-close");
-	if (open) open.addEventListener("click", () => setMobileSheet(true));
+	if (!btn || !pop) return;
+	const setPop = (open) => {
+		pop.hidden = !open;
+		btn.setAttribute("aria-expanded", String(open));
+	};
+	btn.addEventListener("click", (e) => { e.stopPropagation(); setPop(pop.hidden); });
+	// メニューの外を触ったら閉じる
+	document.addEventListener("pointerdown", (e) => {
+		if (!pop.hidden && !pop.contains(e.target) && e.target !== btn) setPop(false);
+	});
+	const press = (id) => { const b = document.getElementById(id); if (b) b.click(); };
+	pop.addEventListener("click", (e) => {
+		const item = e.target.closest ? e.target.closest("button[data-act]") : null;
+		if (!item) return;
+		setPop(false);
+		const act = item.dataset.act;
+		if (act === "chat") setMobileSheet(true);
+		else if (act === "people") press("people-btn");
+		else if (act === "audio") press("audio-settings-btn");
+		else if (act === "away") press("away-btn");
+	});
 	if (close) close.addEventListener("click", () => setMobileSheet(false));
+
+	// 離席の項目の文字を、本物のボタン（離席／着席で変わる）に合わせる
+	const away = document.getElementById("away-btn");
+	const label = pop.querySelector(".m-away-label");
+	if (away && label) {
+		const copy = () => { label.textContent = away.title || "離席"; };
+		new MutationObserver(copy).observe(away, { attributes: true, subtree: true, childList: true, characterData: true });
+		copy();
+	}
 }
 
 // ── マイク ──
