@@ -219,6 +219,91 @@ async function voiceStep() {
 	await maybeReleaseMic(targets);
 	await updateSubscriptions(targets);
 	await closePending();
+	await checkQuality();
+}
+
+// ── 通話品質の記録 ──
+// 「声が途切れ途切れになる」を調べるためのもの。10秒ごとに音声の受信と送信の統計を見て、
+// 悪いときだけ client-errors に残す（where: "quality"）。
+//   stage "in"  … 相手の声を受け取る側で見た品質。name は相手の名前
+//                  （複数の人が同じ相手で悪ければ、その相手の送信側か回線が原因）
+//   stage "up"  … 自分の声を SFU が受け取ったときの品質（SFU からの報告）
+// 記録の欄の上限（message 200字、1接続30件）に収まるよう、相手ごとに5分に1回までにする。
+const QUALITY_EVERY_MS = 10_000;
+const QUALITY_REPORT_MS = 5 * 60_000;
+const LOSS_BAD = 3;       // パケットの欠け（%）がこれ以上なら記録する
+const CONCEAL_BAD = 5;    // 欠けを補った音（%）がこれ以上なら記録する
+let qualityAt = 0;
+const qualityPrev = new Map();     // 統計の前回値。"in:mid" / "up" -> 値
+const qualityReported = new Map(); // 最後に記録した時刻。"in:相手" / "up" -> 時刻
+
+async function checkQuality() {
+	const pc = sfuPc;
+	if (!pc || Date.now() - qualityAt < QUALITY_EVERY_MS) return;
+	qualityAt = Date.now();
+	try {
+		const stats = await pc.getStats();
+		let rtt = null;
+		const byMid = new Map();
+		stats.forEach((r) => {
+			if (r.type === "candidate-pair" && r.nominated && r.currentRoundTripTime != null) rtt = Math.round(r.currentRoundTripTime * 1000);
+		});
+		for (const sub of sfuSubs.values()) if (sub.kind === "audio" && sub.mid != null) byMid.set(String(sub.mid), sub);
+		const seen = new Set();
+		stats.forEach((r) => {
+			// 相手の声の受信
+			if (r.type === "inbound-rtp" && r.kind === "audio" && r.mid != null && byMid.has(String(r.mid))) {
+				const key = `in:${r.mid}`;
+				seen.add(key);
+				const now = { lost: r.packetsLost || 0, recv: r.packetsReceived || 0, conc: r.concealedSamples || 0, tot: r.totalSamplesReceived || 0, jit: r.jitter };
+				const prev = qualityPrev.get(key);
+				qualityPrev.set(key, now);
+				if (!prev) return;
+				const lost = Math.max(0, now.lost - prev.lost), recv = now.recv - prev.recv;
+				if (recv <= 0) return;   // 何も届いていない（相手が送っていない）
+				const loss = lost / (lost + recv) * 100;
+				const tot = now.tot - prev.tot;
+				const conc = tot > 0 ? (now.conc - prev.conc) / tot * 100 : 0;
+				if (loss < LOSS_BAD && conc < CONCEAL_BAD) return;
+				const who = byMid.get(String(r.mid)).owner || "";
+				const peer = peerName(who);
+				reportQuality("in", peer, `loss ${loss.toFixed(1)}% conceal ${conc.toFixed(1)}% jitter ${now.jit != null ? Math.round(now.jit * 1000) : "?"}ms rtt ${rtt ?? "?"}ms`);
+			}
+			// 自分の声の送信（SFU から見た欠け）
+			if (r.type === "remote-inbound-rtp" && r.kind === "audio") {
+				const now = { lost: r.packetsLost || 0, frac: r.fractionLost, jit: r.jitter, rtt: r.roundTripTime };
+				const prev = qualityPrev.get("up");
+				qualityPrev.set("up", now);
+				seen.add("up");
+				if (!prev) return;
+				const loss = (now.frac || 0) * 100;
+				if (loss < LOSS_BAD) return;
+				reportQuality("up", "", `loss ${loss.toFixed(1)}% jitter ${now.jit != null ? Math.round(now.jit * 1000) : "?"}ms rtt ${now.rtt != null ? Math.round(now.rtt * 1000) : rtt ?? "?"}ms`);
+			}
+		});
+		for (const key of [...qualityPrev.keys()]) if (!seen.has(key)) qualityPrev.delete(key);
+	} catch { }   // 統計が取れないブラウザでは何もしない
+}
+
+// 音声用セッションから、いまオフィスにいる相手の名前を引く
+function peerName(sessionId) {
+	for (const o of store.others.values()) if (o.sfu && o.sfu.sessionId === sessionId) return o.name || "";
+	return "";
+}
+
+function reportQuality(stage, peer, message) {
+	const key = `${stage}:${peer}`;
+	const now = Date.now();
+	if (now - (qualityReported.get(key) || 0) < QUALITY_REPORT_MS) return;
+	qualityReported.set(key, now);
+	const ws = store.ws;
+	if (!ws || ws.readyState !== WebSocket.OPEN) return;
+	let tz = "";
+	try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { }
+	ws.send(JSON.stringify({
+		t: "clienterr", where: "quality", stage, name: peer, message: `${message} tz ${tz}`,
+		perm: "", savedMic: !!store.micId, visible: !document.hidden, ua: navigator.userAgent.slice(0, 200),
+	}));
 }
 
 // 相手の中に、受け取るべき音声か画面を出している人がいるか
