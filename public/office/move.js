@@ -7,6 +7,9 @@ import { store } from "./store.js";
 
 const SPEED = 260;          // 移動速度（ワールドpx/秒）
 const heldKeys = new Set();
+// スマホのジョイスティック（mobile.js）の傾き。x, y は -1〜1、長さが速さの割合になる
+const joy = { x: 0, y: 0 };
+export function setJoystick(x, y) { joy.x = x; joy.y = y; }
 
 export function initMove() {
 	window.addEventListener("keydown", (e) => {
@@ -42,10 +45,13 @@ export function update(dt) {
 	if (heldKeys.has("s") || heldKeys.has("arrowdown")) dy += 1;
 	if (heldKeys.has("a") || heldKeys.has("arrowleft")) dx -= 1;
 	if (heldKeys.has("d") || heldKeys.has("arrowright")) dx += 1;
+	// キーを押していなければジョイスティック。倒した量に応じて速さを変える（端まで倒すとキーと同じ）
+	let power = 1;
+	if (!dx && !dy && (joy.x || joy.y)) { dx = joy.x; dy = joy.y; power = Math.min(1, Math.hypot(dx, dy)); }
 	if (!dx && !dy) { store.me.moving = false; return; }
 	store.me.moving = true;
 	store.me.dir = faceDir(dx, dy);
-	const len = Math.hypot(dx, dy);   // 斜めでも速さを一定に
+	const len = Math.hypot(dx, dy) / power;   // 斜めでも速さを一定に（ジョイスティックは倒した量の割合）
 	// 軸ごとに判定して、壁沿いに滑れるようにする。
 	// 横はマップの端から体の半分だけ内側までにする（体が半分マップの外へ出ないように）。
 	const nx = Math.max(BODY_HALF, Math.min(WORLD.w - BODY_HALF, store.me.x + (dx / len) * SPEED * dt));

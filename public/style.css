@@ -1656,3 +1656,222 @@ textarea {
 	color: #b23a2a;
 	font-weight: 700;
 }
+
+
+/* ── スマホの画面（幅が狭いとき） ──
+   PC と同じ部品を使い、置き場所だけ変える。動きは office/mobile.js。
+     マップ … 画面いっぱい（下の帯の分を除く）
+     左メニュー … 右上の ☰ で全画面のシートとして開く
+     下の帯 … 左にマイク、真ん中にジョイスティック、右に退出
+   PC では下の帯・☰・× は出さない。 */
+#m-bar,
+#m-menu,
+#rail #m-close {
+	display: none;
+}
+
+@media (max-width: 760px) {
+	:root {
+		--m-bar: 112px;   /* 下の帯の高さ（ホームバーの分は別に足す） */
+	}
+
+	body {
+		overscroll-behavior: none;   /* 引っぱってページごと動くのを防ぐ */
+	}
+
+	#admin,
+	#admin.rail-collapsed {
+		display: block;
+		height: 100dvh;
+	}
+
+	#stage {
+		position: fixed;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: calc(var(--m-bar) + env(safe-area-inset-bottom));
+	}
+
+	/* 左メニューはシートにする。閉じている間は隠す */
+	#rail {
+		display: none;
+		position: fixed;
+		inset: 0;
+		z-index: 60;
+		border-right: none;
+		padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+	}
+
+	#admin.m-sheet-open #rail {
+		display: flex;
+	}
+
+	#rail #rail-toggle {
+		display: none;
+	}
+
+	#rail #m-close {
+		display: block;
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		width: 40px;
+		height: 40px;
+		margin: 0;
+		padding: 0;
+		border-radius: 50%;
+		font-size: 22px;
+		line-height: 1;
+		z-index: 1;
+	}
+
+	#rail:has(#m-close) h2 {
+		padding-right: 48px;
+	}
+
+	/* チャット欄はシートの残りの高さを使う */
+	#chat-log {
+		flex: 1 1 auto;
+		min-height: 120px;
+	}
+
+	/* 看板はスマホでは表示だけ（作成・編集は PC で）。指では動かせず、作っても直せないため */
+	#rail #comment-add-btn {
+		display: none;
+	}
+
+	/* iPhone は入力欄の文字が 16px 未満だと、触ったときに画面ごと拡大する */
+	#chat-input,
+	#away-text {
+		font-size: 16px;
+	}
+
+	#m-menu {
+		display: block;
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		z-index: 16;
+		width: 44px;
+		height: 44px;
+		border: 2px solid #141815;
+		border-radius: 12px;
+		background: #fff;
+		font-size: 20px;
+		line-height: 1;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+	}
+
+	#m-menu .badge {
+		position: absolute;
+		top: -6px;
+		right: -6px;
+		min-width: 18px;
+		height: 18px;
+		padding: 0 4px;
+		border-radius: 999px;
+		background: #b23a2a;
+		color: #fff;
+		font-size: 11px;
+		font-weight: 700;
+		line-height: 18px;
+	}
+
+	#m-menu .badge[hidden] {
+		display: none;
+	}
+
+	/* 共有画面の小窓は、☰ と重ならないよう下に小さく */
+	.screen-wrap {
+		width: 140px;
+	}
+
+	#m-bar {
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
+		align-items: center;
+		justify-items: center;
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: calc(var(--m-bar) + env(safe-area-inset-bottom));
+		padding-bottom: env(safe-area-inset-bottom);
+		background: #dfe3dd;
+		border-top: 3px solid #141815;
+		z-index: 30;
+		touch-action: none;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
+	}
+
+	.m-round {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 2px;
+		width: 72px;
+		height: 72px;
+		border: 2px solid #141815;
+		border-radius: 50%;
+		background: #fff;
+		color: #141815;
+		font: inherit;
+	}
+
+	.m-round .ic {
+		font-size: 24px;
+		line-height: 1;
+	}
+
+	.m-round .lb {
+		font-size: 10px;
+		font-weight: 700;
+	}
+
+	.m-round.on {
+		background: #2a7d3f;
+		border-color: #2a7d3f;
+		color: #fff;
+	}
+
+	.m-round.danger {
+		color: #b23a2a;
+		border-color: #b23a2a;
+	}
+
+	.m-round:active {
+		transform: scale(0.96);
+	}
+
+	/* ジョイスティック：外側の丸の中で内側の丸が動く */
+	#joy {
+		position: relative;
+		width: 96px;
+		height: 96px;
+		border-radius: 50%;
+		background: rgba(20, 24, 21, 0.08);
+		border: 2px solid rgba(20, 24, 21, 0.35);
+		touch-action: none;
+	}
+
+	#joy-knob {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		width: 44px;
+		height: 44px;
+		margin: -22px 0 0 -22px;
+		border-radius: 50%;
+		background: #1f3fb0;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+		pointer-events: none;
+	}
+
+	#joy:not(.active) #joy-knob {
+		transition: transform 0.12s ease-out;   /* 離したときに中心へ戻る動き */
+	}
+}

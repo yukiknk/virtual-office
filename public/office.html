@@ -11,7 +11,8 @@
 		id が付いている要素はそれらから参照されるため、id を変えると画面が動かなくなる。
 	-->
 	<meta charset="utf-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<!-- viewport-fit=cover は iPhone の画面下の帯（ホームバー）の分まで使い、余白は CSS の safe-area で取る -->
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
 	<!-- タブに出る文字の既定値。config.jsの値に上書きされる -->
 	<title data-config-title="バーチャルオフィス">バーチャルオフィス</title>
@@ -40,6 +41,8 @@
 
 		<!-- 左のメニューバー。中身が空の div は scene.js が後から埋める枠。 -->
 		<aside id="rail">
+			<!-- スマホでシートとして開いたときの閉じるボタン（mobile.js）。PC では出ない -->
+			<button type="button" id="m-close" aria-label="メニューを閉じる">×</button>
 			<!-- メニューを細い帯に畳む／元に戻す（panel.js の initRailToggle）。
 			     畳んでもマイク・画面共有・離席は押せるように、アイコンだけを残す。 -->
 			<button type="button" id="rail-toggle" title="メニューを畳む" aria-label="メニューを畳む">«</button>
@@ -106,6 +109,8 @@
 		     style.css と、scene.js / admin/editor.js が同じ名前で取得している。 -->
 		<section id="stage">
 			<div id="banner"></div>   <!-- 音声・画面共有の状態表示（voice.js） -->
+			<!-- スマホのときだけ出る。左メニュー（チャット・在室者・離席など）をシートで開く（mobile.js） -->
+			<button type="button" id="m-menu" aria-label="メニュー">☰<span class="badge" hidden></span></button>
 
 			<!-- width/height は飾り。scene.js が起動直後に画面サイズから計算し直す。
 			     JS が走る前の一瞬だけ形が保たれるように書いてある。 -->
@@ -189,6 +194,13 @@
 				</div>
 			</div>
 		</section>
+	</div>
+
+	<!-- スマホのときだけ出る下の帯（mobile.js）。左にマイク、真ん中にジョイスティック、右に退出 -->
+	<div id="m-bar">
+		<button type="button" id="m-mic" class="m-round"><span class="ic">🔇</span><span class="lb">ミュート中</span></button>
+		<div id="joy" aria-label="移動"><div id="joy-knob"></div></div>
+		<button type="button" id="m-leave" class="m-round danger"><span class="ic">🚪</span><span class="lb">退出</span></button>
 	</div>
 
 	<!-- 看板の作成・編集。画面全体を覆うので #admin の外に置いている。

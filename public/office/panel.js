@@ -500,6 +500,30 @@ function setAwayBtn(away) {
 let railCollapsed = false;
 let unreadChat = 0;
 
+// ── スマホの画面（mobile.js） ──
+// 幅が狭いときは、左メニューを全画面のシートとして出し入れする（style.css の @media）。
+// シートを閉じている間はチャットが見えないので、畳んでいるときと同じく未読を数える。
+const MOBILE_QUERY = "(max-width: 760px)";
+let mobileSheetOpen = false;
+export function isMobileLayout() {
+	return window.matchMedia(MOBILE_QUERY).matches;
+}
+export function setMobileSheet(open) {
+	mobileSheetOpen = open;
+	const root = document.getElementById("admin");
+	if (root) root.classList.toggle("m-sheet-open", open);
+	if (open) {
+		setUnread(0);
+		const log = document.getElementById("chat-log");
+		if (log) log.scrollTop = log.scrollHeight;
+	} else if (document.activeElement && document.activeElement.blur) {
+		document.activeElement.blur();   // 入力欄にカーソルが残るとキーボードが出たままになる
+	}
+}
+function chatHidden() {
+	return railCollapsed || (isMobileLayout() && !mobileSheetOpen);
+}
+
 export function initRailToggle() {
 	const root = document.getElementById("admin");
 	const toggle = document.getElementById("rail-toggle");
@@ -528,16 +552,17 @@ export function initRailToggle() {
 		if (input) input.focus();
 	});
 	// 前回の状態を引き継ぐ。初めての人（保存された値が無い人）は、開いた状態から始める。
-	apply(read(KEY.rail, "") === "1", false);
+	// スマホの画面では畳まない（シートとして全部を見せるため。保存された値は変えない）。
+	apply(!isMobileLayout() && read(KEY.rail, "") === "1", false);
 }
 
 // 畳んでいる間に届いたチャットの数。チャットを開くボタンの右上に出す。
 function setUnread(n) {
 	unreadChat = n;
-	const badge = document.querySelector("#chat-open-btn .badge");
-	if (!badge) return;
-	badge.hidden = n === 0;
-	badge.textContent = n > 9 ? "9+" : String(n);
+	for (const badge of document.querySelectorAll("#chat-open-btn .badge, #m-menu .badge")) {
+		badge.hidden = n === 0;
+		badge.textContent = n > 9 ? "9+" : String(n);
+	}
 }
 
 // ── 転送量の表示（使用量 / 1000GB） ──
@@ -579,7 +604,7 @@ export function updateChat() {
 	if (last && last.self) chatStick = true;
 	// メニューを畳んでいる間に届いたぶんを数える（自分の発言は数えない）。
 	// 1回の描画のあいだに複数届くことがあるので、増えた件数ぶんを末尾から見る。
-	if (railCollapsed && added > 0) {
+	if (chatHidden() && added > 0) {
 		const fresh = store.messages.slice(-added).filter((m) => !m.self).length;
 		if (fresh) setUnread(unreadChat + fresh);
 	}
