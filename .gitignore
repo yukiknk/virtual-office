@@ -22,3 +22,6 @@ public/assets/avatar/
 
 # Claude が会話に送ったファイルの保存先
 Claude outputs/
+
+# Claude 向けの個人用指示（個人のフォルダ構成を含むためコミットしない）
+CLAUDE.md
