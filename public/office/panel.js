@@ -251,12 +251,12 @@ export function updateCallPrompt() {
 		btn.addEventListener("click", () => { sendCall(t.id); cool(btn); });
 		return btn;
 	});
-	// 2人以上いるときだけ「全員」を先頭に置く。並んでいる全員を一度に呼び出す
+	// 2人以上いるときだけ「近くの全員」を先頭に置く。並んでいる全員を一度に呼び出す
 	if (targets.length >= 2) {
 		const all = document.createElement("button");
 		all.type = "button";
 		all.className = "call-btn all";
-		all.textContent = "全員";
+		all.textContent = "近くの全員";
 		all.title = `${targets.map((t) => t.name).join("、")}さんを呼び出す`;
 		all.addEventListener("click", () => {
 			for (const t of targets) sendCall(t.id);
