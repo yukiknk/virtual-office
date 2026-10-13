@@ -34,7 +34,11 @@ function loadSheets() {
 //   間引くもの   updateVoice / updateRoster / updatePeople … 変化検知を持たない
 //   間引かないもの updateChat / updateUsage / updateCallPrompt / updateCallAlert
 //                 … 内部に「前回と同じなら即 return」のガードがある
-let lastT = 0, lastVoice = 0, lastRoster = 0;
+let lastT = 0, lastVoice = 0, lastRoster = 0, lastDraw = 0;
+// 描くのは毎秒30回まで。画面によっては requestAnimationFrame が毎秒120回来るが、
+// ドット絵の動きには30回で足りる。移動の計算と位置の送信は毎回行う（操作の遅れを出さない）。
+// 30ms にしているのは、60Hz の画面で2回に1回（33ms ごと）、120Hz で4回に1回になるようにするため。
+const DRAW_EVERY_MS = 30;
 function loop(t) {
 	// dt の上限は移動のワープ防止。タブから戻ったときに数秒分をまとめて
 	// 進めてしまわないよう、1フレーム 50ms 相当で頭打ちにする。
@@ -49,7 +53,7 @@ function loop(t) {
 	updateCallAlert();
 	updateChat();
 	updateUsage();
-	draw();
+	if (t - lastDraw >= DRAW_EVERY_MS) { lastDraw = t; draw(); }
 	requestAnimationFrame(loop);
 }
 
