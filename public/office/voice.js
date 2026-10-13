@@ -130,6 +130,7 @@ async function reportVoiceError(where, err, stage = micStage) {
 let stopTalk = null;          // 検出の停止関数。マイクを閉じるときに呼ぶ
 let talkRaw = false;
 let talkSent = false;
+let micSent = null;           // 全員に知らせてあるマイクの状態（true=ON）。null はまだ知らせていない
 let screenBtnKey = "";
 let noticeTimer = null;       // 一時的なお知らせ（バナー）を消すタイマー
 
@@ -687,6 +688,7 @@ export function onServerJoined(resumed) {
 	clearTimeout(dropTimer);
 	dropTimer = null;
 	talkSent = false;   // サーバーは「話している」を覚えていないので、次に話したとき送り直す
+	micSent = null;     // マイクの状態も覚えていないので送り直す
 	// 引き継げなかった（合札が通らなかった、など）。サーバーは古い接続を知らないので、
 	// これまでどおり畳んで張り直す。何も張っていなかったなら何もしない。
 	if (!resumed && (sfuPc || screenPc)) teardownSfu();
@@ -894,6 +896,7 @@ function micLostText(err) {
 // ボタンと実際の送信状況が食い違わないようにする。
 function syncMicBtn() {
 	syncTalk();   // マイクの状態が変わる場所は必ずここを通るので、吹き出しも一緒に合わせる
+	syncMicState();
 	let v;
 	if (!micOn) v = micFailed ? { on: false, icon: "🚫", label: "マイク不可" } : { on: false, icon: "🔇", label: "ミュート中" };
 	else if (micTesting) v = { on: false, icon: "🎤", label: "テスト中" };
@@ -905,6 +908,19 @@ function syncMicBtn() {
 	if (key === micBtnKey) return;
 	micBtnKey = key;
 	setToolBtn("mic-btn", v);
+}
+
+// マイクが ON か（実際に声が流れているか）を全員へ知らせる。変わったときだけ送る。
+// ほかの人の名前ラベルに、マイクの印として出る（scene.js の drawPillAt）。
+// ボタンの「ON」と同じ判定（micLive）を使うので、ボタンと印は必ず一致する。
+function syncMicState() {
+	const on = micLive();
+	store.me.mic = on;   // 自分の印は送信を待たずに出す
+	if (on === micSent) return;
+	const ws = store.ws;
+	if (!ws || ws.readyState !== WebSocket.OPEN) return;
+	ws.send(JSON.stringify({ t: "mic", on }));
+	micSent = on;
 }
 
 // 「話している」を全員へ知らせる。変わったときだけ送る。
