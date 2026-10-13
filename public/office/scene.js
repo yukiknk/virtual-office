@@ -180,8 +180,7 @@ function updateCamera() {
 export function draw() {
 	updateCamera();
 	drawBase(ctx, canvas);
-	drawLayer("floor");     // 床（下）
-	drawLayer("rug");       // 敷物（中）
+	drawGround();           // 床（下）と敷物（中）。作り置きの1枚を貼るだけ
 	drawWallsAndActors();   // 壁とアバターは足元の行で前後を判定して描く
 	drawZones();            // 会話エリアのホバー表示
 	drawComments();         // コメント（メモ）は一番上のレイヤー
@@ -397,6 +396,42 @@ function snapRect(wx, wy, ww, wh) {
 	const a = w2s(wx, wy), b = w2s(wx + ww, wy + wh);
 	const x0 = snap(a.x), y0 = snap(a.y);
 	return { x: x0, y: y0, w: snap(b.x) - x0, h: snap(b.y) - y0 };
+}
+
+// ── 床と敷物の作り置き ──
+// 床と敷物は人の前後関係に関わらず、管理者が「反映」するまで変わらない。毎フレーム
+// 1マスずつ描くと、マス数（最大1500）ぶんの drawImage が毎回走り、高解像度で
+// 毎秒120回描く Mac ではファンが回るほど重くなっていた。そこでマップ全体を1枚の
+// キャンバスに描いておき、毎フレームはそれを貼るだけにする。
+//
+// 描き直すのは、倍率・画面の解像度・レイアウト・画像シートの読み込み状況が変わったときだけ。
+// setViewport が1マスを実ピクセルの整数に丸めているので、マスごとに描いたときと
+// 同じ位置に同じ絵が並ぶ（継ぎ目は出ない）。
+let ground = null;   // { canvas, key, layout }
+function drawGround() {
+	const dpr = window.devicePixelRatio || 1;
+	const cell = Math.round(GRID * getScale() * dpr);   // 1マスの実ピクセル
+	const key = `${cell}|${Object.values(SHEETS).map((s) => (s.ready ? 1 : 0)).join("")}`;
+	if (!ground || ground.key !== key || ground.layout !== store.layout) {
+		const c = (ground && ground.canvas) || document.createElement("canvas");
+		c.width = Math.round(WORLD.w / GRID) * cell;
+		c.height = Math.round(WORLD.h / GRID) * cell;
+		const g = c.getContext("2d");
+		g.clearRect(0, 0, c.width, c.height);
+		g.imageSmoothingEnabled = false;
+		for (const layer of ["floor", "rug"]) {
+			for (const item of store.layout) {
+				if ((item.layer || "floor") !== layer) continue;
+				const sheet = SHEETS[item.cat || "floor"];
+				if (!sheet || !sheet.ready) continue;
+				g.drawImage(sheet.img, item.tileCol * 32, item.tileRow * 32, 32, 32, item.col * cell, item.row * cell, cell, cell);
+			}
+		}
+		ground = { canvas: c, key, layout: store.layout };
+	}
+	const o = w2s(0, 0);
+	ctx.imageSmoothingEnabled = false;
+	ctx.drawImage(ground.canvas, o.x, o.y, ground.canvas.width / dpr, ground.canvas.height / dpr);
 }
 
 function drawLayer(layerKey) {
