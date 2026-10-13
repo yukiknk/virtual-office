@@ -132,10 +132,10 @@ function closeCommentModal() {
 }
 function saveCommentModal() {
 	if (!commentDraft) return;
-	const { runs, text } = commentEditor.get();
+	const { runs, text, align } = commentEditor.get();
 	// 装飾は runs が持つ。size / color / bold / italic は「指定なし」の値に戻しておく
 	const fields = {
-		text, runs,
+		text, runs, align,
 		size: 16, color: "#141815", bold: false, italic: false,
 		bg: document.getElementById("c-bg").value,
 	};

@@ -7,6 +7,7 @@
 //     t … 文字（改行は "\n"）   b … 太字   i … 斜体   u … 下線
 //     c … 文字色               s … 大きさ（px。SIZES のどれか）
 //     m … マーカー（文字の背景色）
+// 文字の揃え（align: "left" | "center" | "right"）は看板全体に1つ。無ければ中央。
 // 無い項目は「指定なし」。runs を持たない古い看板は、これまでどおり
 // text と size / color / bold / italic（看板全体の指定）で描かれる。
 //
@@ -26,6 +27,8 @@ export const SIZES = [
 export const DEFAULT_SIZE = 16;
 export const DEFAULT_COLOR = "#141815";
 const DEFAULT_MARKER = "#ffe66d";
+export const ALIGNS = ["left", "center", "right"];
+export const DEFAULT_ALIGN = "center";
 
 // 看板1枚ぶんの runs を返す。runs を持たない古い看板は、全体の指定を1つの run にして返す。
 export function runsOf(c) {
@@ -46,7 +49,7 @@ export function plainOf(runs) {
 
 // host の中に編集欄を作る。戻り値で中身の出し入れをする。
 //   set(c)   … 看板 c の内容を編集欄へ入れる
-//   get()    … いまの内容を { runs, text } で返す
+//   get()    … いまの内容を { runs, text, align } で返す
 //   setBg(v) … 編集欄の背景色（看板の背景色を写して、仕上がりを見せる）
 //   focus()  … 編集欄にカーソルを置く
 export function createRichEditor(host) {
@@ -62,6 +65,10 @@ export function createRichEditor(host) {
 			<label class="rt-color" title="文字の色"><span>色</span><input type="color" class="rt-fg" value="${DEFAULT_COLOR}" /></label>
 			<label class="rt-color" title="マーカー（文字の背景色）"><span>マーカー</span><input type="color" class="rt-mk" value="${DEFAULT_MARKER}" /></label>
 			<button type="button" class="rt-btn rt-wide" data-act="unmark" title="マーカーを消す">消す</button>
+			<span class="rt-sep"></span>
+			<button type="button" class="rt-btn" data-align="left" title="左揃え"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 3.5h12M2 6.5h8M2 9.5h12M2 12.5h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button>
+			<button type="button" class="rt-btn" data-align="center" title="中央揃え"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 3.5h12M4 6.5h8M2 9.5h12M4 12.5h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button>
+			<button type="button" class="rt-btn" data-align="right" title="右揃え"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 3.5h12M6 6.5h8M2 9.5h12M6 12.5h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button>
 		</div>
 		<div class="rt-edit" contenteditable="true" spellcheck="false" data-placeholder="文字を入力する"></div>
 		<div class="rt-hint">文字を選んでからボタンを押すと、その部分だけ変わります</div>`;
@@ -69,6 +76,14 @@ export function createRichEditor(host) {
 	const sizeSel = host.querySelector(".rt-size");
 	const fg = host.querySelector(".rt-fg");
 	const mk = host.querySelector(".rt-mk");
+
+	// ── 文字の揃え（看板全体に1つ） ──
+	let align = DEFAULT_ALIGN;
+	const setAlign = (v) => {
+		align = ALIGNS.includes(v) ? v : DEFAULT_ALIGN;
+		ed.style.textAlign = align;
+		for (const b of host.querySelectorAll(".rt-btn[data-align]")) b.classList.toggle("on", b.dataset.align === align);
+	};
 
 	// ── 選択範囲の保存と復元 ──
 	// 大きさのプルダウンや色の選択を触ると、フォーカスが編集欄から外れて選択が消える。
@@ -101,6 +116,7 @@ export function createRichEditor(host) {
 		b.addEventListener("mousedown", (e) => e.preventDefault());
 		b.addEventListener("click", () => {
 			if (b.dataset.cmd) exec(b.dataset.cmd);
+			else if (b.dataset.align) { setAlign(b.dataset.align); return; }
 			else if (b.dataset.act === "unmark") setMarker("transparent");
 			syncBar();
 		});
@@ -171,11 +187,12 @@ export function createRichEditor(host) {
 			saved = null;
 			pendingSize = DEFAULT_SIZE;
 			sizeSel.value = String(DEFAULT_SIZE);
+			setAlign(c.align);
 			syncBar();
 		},
 		get() {
 			const runs = serialize(ed);
-			return { runs, text: plainOf(runs) };
+			return { runs, text: plainOf(runs), align };
 		},
 		setBg(v) { ed.style.background = v || "#ffffff"; },
 		focus() { ed.focus(); },

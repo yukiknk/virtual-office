@@ -46,6 +46,7 @@ export function cleanComment(c) {
     bg: hex(c.bg, "#ffffff"),
     bold: !!c.bold,
     italic: !!c.italic,
+    align: c.align === "left" || c.align === "right" ? c.align : "center",   // 文字の揃え（public/richtext.js）
     expireAt: Number.isFinite(+c.expireAt) ? Math.floor(+c.expireAt) : null,   // 消える日時（ms）。無ければ null
   };
 }

@@ -136,11 +136,12 @@ export function drawCommentBox(ctx, c) {
 	const style = c.italic ? "italic " : "";
 	ctx.font = `${style}${weight} ${size}px 'M PLUS Rounded 1c', system-ui, 'Noto Sans JP', sans-serif`;
 	ctx.fillStyle = c.color || "#141815";
-	ctx.textAlign = "center";
+	const align = c.align === "left" || c.align === "right" ? c.align : "center";
+	ctx.textAlign = align;
 	ctx.textBaseline = "middle";
 	const lines = wrapLines(ctx, c.text || "", w - 16 * scale);
 	const lineH = size + 4 * scale;
-	const cx = a.x + w / 2;
+	const cx = align === "left" ? a.x + 8 * scale : align === "right" ? a.x + w - 8 * scale : a.x + w / 2;
 	// 行の集まり全体が枠の上下中央に来るよう、1行目の中心から描き始める
 	let yy = a.y + h / 2 - (lines.length * lineH) / 2 + lineH / 2;
 	for (const ln of lines) { ctx.fillText(ln, cx, yy); yy += lineH; }
@@ -198,17 +199,19 @@ function layoutRuns(ctx, c, maxW) {
 	return lines;
 }
 
-// 行ごとに中央へ寄せて描く。大きさの違う文字は、行の中で下端（ベースライン）を揃える。
+// 行ごとに揃えて描く（c.align。無ければ中央）。左右の余白は 8px ずつで、折り返しの幅（w - 16）と合わせてある。
+// 大きさの違う文字は、行の中で下端（ベースライン）を揃える。
 function drawRuns(ctx, c, a, w, h) {
 	const lines = layoutRuns(ctx, c, w - 16 * scale);
 	const total = lines.reduce((sum, l) => sum + l.h, 0);
-	const cx = a.x + w / 2;
+	const pad = 8 * scale;
+	const startX = (line) => c.align === "left" ? a.x + pad : c.align === "right" ? a.x + w - pad - line.w : a.x + w / 2 - line.w / 2;
 	let y = a.y + h / 2 - total / 2;
 	ctx.textAlign = "left";
 	ctx.textBaseline = "alphabetic";
 	for (const line of lines) {
 		const baseline = y + line.h * 0.5 + line.size * 0.35;
-		let x = cx - line.w / 2;
+		let x = startX(line);
 		for (const seg of line.segs) {
 			const r = seg.run;
 			if (r.m) {   // マーカーは行の高さいっぱいではなく、その文字の高さぶんだけ塗る

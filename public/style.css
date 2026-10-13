@@ -735,6 +735,18 @@ textarea {
 	cursor: pointer;
 }
 
+.rt-btn svg {
+	display: block;
+	margin: auto;
+}
+
+/* 揃えのボタンの前の区切り */
+.rt-sep {
+	width: 1px;
+	height: 20px;
+	background: #cdd2c9;
+}
+
 .rt-btn.rt-wide {
 	width: auto;
 	padding: 0 8px;
@@ -827,6 +839,11 @@ textarea {
 	background: #fff;
 	font: inherit;
 	font-size: 14px;
+}
+
+.cdt select.need {
+	border-color: #c2412d;
+	box-shadow: 0 0 0 2px rgba(194, 65, 45, 0.18);
 }
 
 .cdt span {

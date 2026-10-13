@@ -58,15 +58,29 @@ function fillExpirySelects() {
 	for (let i = 0; i <= 2; i++) opt(y, yr + i, String(yr + i));
 	for (let m = 1; m <= 12; m++) opt(mo, m, String(m));
 	for (let dd = 1; dd <= 31; dd++) opt(d, dd, String(dd));
+	// 時と分の先頭は空欄。新規作成では空欄から始め、選ばないと作成できないようにする
+	// （初期値のまま気づかずに作ると、意図しない時刻に消える）
+	opt(h, "", "--");
+	opt(mi, "", "--");
 	for (let hh = 0; hh <= 23; hh++) opt(h, hh, String(hh).padStart(2, "0"));
 	for (let mm = 0; mm < 60; mm += 15) opt(mi, mm, String(mm).padStart(2, "0"));   // 15分刻み
+	// 空欄のあいだは枠を赤くして、選ぶ場所だと分かるようにする
+	for (const sel of [h, mi]) sel.addEventListener("change", markEmptyTime);
 }
-function setExpirySelects(dt) {
+// withTime = false なら、時と分は空欄にする（新規作成）
+function setExpirySelects(dt, withTime = true) {
 	document.getElementById("c-year").value = String(dt.getFullYear());
 	document.getElementById("c-month").value = String(dt.getMonth() + 1);
 	document.getElementById("c-day").value = String(dt.getDate());
-	document.getElementById("c-hour").value = String(dt.getHours());
-	document.getElementById("c-min").value = String(Math.floor(dt.getMinutes() / 15) * 15);   // 15分刻みに合わせる
+	document.getElementById("c-hour").value = withTime ? String(dt.getHours()) : "";
+	document.getElementById("c-min").value = withTime ? String(Math.floor(dt.getMinutes() / 15) * 15) : "";   // 15分刻みに合わせる
+	markEmptyTime();
+}
+function markEmptyTime() {
+	for (const id of ["c-hour", "c-min"]) {
+		const sel = document.getElementById(id);
+		if (sel) sel.classList.toggle("need", sel.value === "");
+	}
 }
 // 看板の作成／編集を開く。
 // 引数ありは既存の看板の再編集（scene.js のクリックから）、なしは新規作成。
@@ -82,10 +96,10 @@ export function openCommentModal(target) {
 	document.getElementById("c-bg").value = src.bg || "#ffffff";
 	commentEditor.set(src);
 	commentEditor.setBg(src.bg || "#ffffff");
-	// 期限日時：既存はその値、新規は「今から1時間後」を初期値に
+	// 期限日時：既存はその値。新規は「今から1時間後」の年月日を入れ、時と分は空欄にする
 	const base = src.expireAt ? new Date(src.expireAt) : new Date(Date.now() + 60 * 60 * 1000);
 	base.setSeconds(0, 0);
-	setExpirySelects(base);
+	setExpirySelects(base, !!src.expireAt);
 	const err = document.getElementById("c-err");
 	if (err) err.textContent = "";
 	document.getElementById("comment-modal").classList.add("open");
@@ -104,18 +118,21 @@ function saveCommentModal() {
 	const y = +document.getElementById("c-year").value;
 	const mo = +document.getElementById("c-month").value;
 	const d = +document.getElementById("c-day").value;
-	const h = +document.getElementById("c-hour").value;
-	const mi = +document.getElementById("c-min").value;
+	const hv = document.getElementById("c-hour").value;
+	const mv = document.getElementById("c-min").value;
+	if (hv === "" || mv === "") { markEmptyTime(); setErr("消える時刻（時と分）を選んでください。"); return; }
+	const h = +hv;
+	const mi = +mv;
 	const dt = new Date(y, mo - 1, d, h, mi, 0, 0);
 	if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) { setErr("その日付は存在しません。"); return; }
 	const expireAt = dt.getTime();
 	if (expireAt <= Date.now()) { setErr("未来の日時を指定してください。"); return; }
-	const { runs, text } = commentEditor.get();
+	const { runs, text, align } = commentEditor.get();
 	if (text.length > COMMENT_MAX) { setErr(`文字は${COMMENT_MAX}文字までです（いま${text.length}文字）。`); return; }
 	// 装飾は runs が持つ。size / color / bold / italic は「指定なし」の値に戻しておく
 	// （runs を知らない古い画面で開いている人には、text がこの指定で表示される）。
 	const fields = {
-		text, runs,
+		text, runs, align,
 		size: 16, color: "#141815", bold: false, italic: false,
 		bg: document.getElementById("c-bg").value,
 		expireAt,
