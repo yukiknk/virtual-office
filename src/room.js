@@ -26,7 +26,7 @@
 
 import { GB, LIMIT_GB, NEAR, CALL_COOLDOWN_MS, LEAVE_GRACE_MS, STALE_MS, BOOT_GRACE_MS, ROSTER_QUIET_MS } from "./config.js";
 import { talkGroupKeys } from "../public/talk.js";
-import { json, cleanAvatar, cleanComment, monthKey, levelFor, zoneIdAtWorld, bytesPerSec, readWebhookUrl, escapeSlack } from "./helpers.js";
+import { json, cleanAvatar, cleanComment, monthKey, levelFor, budgetLimits, zoneIdAtWorld, bytesPerSec, readWebhookUrl, escapeSlack } from "./helpers.js";
 
 export class Room {
   constructor(ctx, env) {
@@ -348,7 +348,7 @@ export class Room {
     ws.serializeAttachment(att);
     ws.send(JSON.stringify({
       t: "welcome", id: att.id, token: att.token, resumed: !!sfu,
-      budget: { level: this.budgetLevel, usedGb: this.usedGb(), limitGb: LIMIT_GB },
+      budget: { level: this.budgetLevel, usedGb: this.usedGb(), limitGb: this.limits().limit },
     }));
     await this.ensureComments();
     ws.send(JSON.stringify({ t: "comments", list: this.comments }));   // 入室時に現在のコメントを送る
@@ -642,11 +642,16 @@ export class Room {
 
   // ── 転送量ガード ──
   usedGb() {
-    return Math.round((this.budgetBytes / GB) * 10) / 10;
+    // 上限を小さくして試しているとき（1GB 未満）は、変化が見えるよう小数3桁まで出す
+    const digits = this.limits().limit < 1 ? 1000 : 10;
+    return Math.round((this.budgetBytes / GB) * digits) / digits;
+  }
+  limits() {
+    return budgetLimits(this.env);
   }
   async ensureBudgetLoaded() {
     if (this.budgetLoaded) return;
-    const saved = await this.ctx.storage.get("budget");
+    const saved = await this.ctx.storage.get(this.limits().key);
     const m = monthKey();
     if (saved && saved.month === m) {
       this.budgetBytes = saved.bytes;
@@ -654,9 +659,9 @@ export class Room {
     } else {
       this.budgetBytes = 0;
       this.budgetMonth = m;
-      await this.ctx.storage.put("budget", { month: m, bytes: 0 });
+      await this.ctx.storage.put(this.limits().key, { month: m, bytes: 0 });
     }
-    this.budgetLevel = levelFor(this.budgetBytes);
+    this.budgetLevel = levelFor(this.budgetBytes, this.limits());
     this.budgetLoaded = true;
   }
   // 転送量を積む周期アラーム。接続が来るたびに呼ぶが、既に予約済みなら何もしない。
@@ -706,11 +711,11 @@ export class Room {
     const elapsed = this.lastTick ? Math.min(60, (now - this.lastTick) / 1000) : 0;
     this.lastTick = now;
     this.budgetBytes += bytesPerSec(users, zones) * elapsed;
-    await this.ctx.storage.put("budget", { month: this.budgetMonth, bytes: this.budgetBytes });
+    await this.ctx.storage.put(this.limits().key, { month: this.budgetMonth, bytes: this.budgetBytes });
     await this.ctx.storage.put("alive", now);   // 「この時刻までは動いていた」の記録（boot が止まっていた時間を測るのに使う）
 
-    this.budgetLevel = levelFor(this.budgetBytes);
-    const out = JSON.stringify({ t: "budget", level: this.budgetLevel, usedGb: this.usedGb(), limitGb: LIMIT_GB });
+    this.budgetLevel = levelFor(this.budgetBytes, this.limits());
+    const out = JSON.stringify({ t: "budget", level: this.budgetLevel, usedGb: this.usedGb(), limitGb: this.limits().limit });
     for (const ws of sockets) { try { ws.send(out); } catch { } }
 
     // 名簿に人が残っている間は、接続が 0 でも次を予約する（照合を終えて名簿を空にするため）

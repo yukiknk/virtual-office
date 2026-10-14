@@ -2,7 +2,7 @@
 // ここに置く関数は env も this も参照しない。テストしたくなったらここから。
 
 import { talkGroupKeys } from "../public/talk.js";
-import { GB, AUDIO_BPS, SCREEN_BPS, SCREEN_OFF_GB, VOICE_OFF_GB, SLACK_WEBHOOK_PREFIX, WORLD_W, WORLD_H } from "./config.js";
+import { GB, AUDIO_BPS, SCREEN_BPS, SCREEN_OFF_GB, VOICE_OFF_GB, LIMIT_GB, SLACK_WEBHOOK_PREFIX, WORLD_W, WORLD_H } from "./config.js";
 
 // JSON レスポンスを作る
 export function json(body, status = 200) {
@@ -106,11 +106,26 @@ export function monthKey(now = Date.now()) {
 }
 
 // 積算した転送量から停止レベルを決める
-export function levelFor(bytes) {
+export function levelFor(bytes, limits = budgetLimits()) {
   const gb = bytes / GB;
-  if (gb >= VOICE_OFF_GB) return "voice_off";
-  if (gb >= SCREEN_OFF_GB) return "screen_off";
+  if (gb >= limits.voiceOff) return "voice_off";
+  if (gb >= limits.screenOff) return "screen_off";
   return "ok";
+}
+
+// 転送量の上限（GB）。ふだんは src/config.js の値。
+// 止まるかどうかを試すときだけ、デプロイ時の変数で小さくできる（BETA.md の「転送量の上限を試す」）:
+//   npx wrangler deploy --env beta --var SCREEN_OFF_GB:0.001 --var VOICE_OFF_GB:0.002 --var LIMIT_GB:0.003 --var BUDGET_KEY:budget-test1
+// BUDGET_KEY を変えると、そのキーで 0 から数え直す（いつもの積算には触れない）。
+// 変数を付けずにデプロイし直せば元に戻る。本番では付けないこと。
+export function budgetLimits(env = {}) {
+  const n = (v, d) => { const x = parseFloat(v); return Number.isFinite(x) && x >= 0 ? x : d; };
+  return {
+    screenOff: n(env.SCREEN_OFF_GB, SCREEN_OFF_GB),
+    voiceOff: n(env.VOICE_OFF_GB, VOICE_OFF_GB),
+    limit: n(env.LIMIT_GB, LIMIT_GB),
+    key: typeof env.BUDGET_KEY === "string" && /^[\w-]{1,40}$/.test(env.BUDGET_KEY) ? env.BUDGET_KEY : "budget",
+  };
 }
 
 // 点がどの会話エリアにあるか（id または null）。
