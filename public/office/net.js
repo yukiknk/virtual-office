@@ -129,7 +129,7 @@ function onState(msg) {
 		o.talk = !!u.talk;   // 話しているか（アバターに吹き出しを出す）
 		o.mic = !!u.mic;     // マイクが ON か（名前ラベルに印を出す）
 		if (u.avatar) o.avatar = u.avatar;   // 未設定の人の情報で既存の値を消さない
-		// 位置が変わった人がいれば、絵を毎秒30回に戻す（scene.js の needsFastDraw）
+		// 位置が変わった人がいれば、絵を毎秒30回に戻す（scene.js の drawMode）
 		const prev = o.buf[o.buf.length - 1];
 		if (!prev || prev.x !== u.x || prev.y !== u.y) store.motionAt = now;
 		// 受信時刻つきで積む。scene.js が過去2点の間を補間して滑らかに動かす。

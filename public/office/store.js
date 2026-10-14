@@ -68,7 +68,7 @@ export const store = {
 	myToken: null,
 
 	// ── 転送量ガード ──
-	motionAt: 0,          // ほかの人の位置が最後に変わった時刻（net.js が書き、scene.js の needsFastDraw が読む）
+	motionAt: 0,          // ほかの人の位置が最後に変わった時刻（net.js が書き、scene.js の drawMode が読む）
 	budgetLevel: "ok",    // "ok" | "screen_off" | "voice_off"
 	usedGb: 0,            // 今月の使用量（GB）
 	limitGb: 1000,        // 無料枠（GB）

@@ -24,8 +24,8 @@ const LERP_DELAY = 120;     // 他人は120ms過去を補間して滑らかに�
 const MIN_SCALE = 0.6;
 // 見ている場所の中心（ワールド座標）。目標へ少しずつ寄せて、場面の切り替わりを滑らかにする。
 let camX = null, camY = null;
-let cameraMoving = false;   // 見る場所がまだ目標へ向かって動いている途中か（needsFastDraw）
-let lastPointerAt = 0;      // マップの上でカーソルが最後に動いた時刻（needsFastDraw）
+let cameraMoving = false;   // 見る場所がまだ目標へ向かって動いている途中か（drawMode）
+let lastPointerAt = 0;      // マップの上でカーソルが最後に動いた時刻（drawMode）
 const SIGN_ALPHA = 0.7;     // 人と重なっている看板の濃さ（下の人が透けて見える程度）
 
 // このフレームで描いた人の一覧。drawWallsAndActors が作り、drawComments が
@@ -186,17 +186,18 @@ function updateCamera() {
 	lookAt(camX, camY);
 }
 
-// 毎秒30回描く必要があるか（main.js が描く回数を決めるのに使う）。
-// 誰も動いておらず、マウスも触っていないときは、絵はほとんど変わらない。そのときまで毎秒30回
-// 描き直すと、画面が見えている間ずっと CPU を使い続ける（Mac でファンが回るという報告があった）。
-// 動きがあるときだけ毎秒30回にし、それ以外は間引く（話している印の点の動き程度は追える回数にする）。
-export function needsFastDraw() {
-	if (store.me.moving || dragComment || cameraMoving) return true;
-	if (store.locate && Date.now() <= store.locate.until) return true;   // 場所を示す輪が広がっている
+// いまの絵の動き方（main.js が描く回数を決めるのに使う）。
+//   "move" … 人が動いている（自分・ほかの人・映す場所）。いちばん滑らかに描く
+//   "fast" … 看板の操作、カーソルの移動、場所を示す輪
+//   "idle" … 何も動いていない。絵はほとんど変わらないので間引く
+// 何も動いていないときまで細かく描き直すと、画面が見えている間ずっと CPU を使い続ける
+// （Mac でファンが回るという報告があった）。
+export function drawMode() {
 	const now = Date.now();
-	if (now - lastPointerAt < 500) return true;          // カーソルを動かしている（看板やエリアの表示）
-	if (now - (store.motionAt || 0) < 500) return true;   // ほかの人が動いている（net.js が記録）
-	return false;
+	if (store.me.moving || cameraMoving || now - (store.motionAt || 0) < 500) return "move";   // ほかの人の動きは net.js が記録
+	if (dragComment || now - lastPointerAt < 500) return "fast";
+	if (store.locate && now <= store.locate.until) return "fast";
+	return "idle";
 }
 
 export function draw() {
