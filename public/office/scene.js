@@ -514,15 +514,13 @@ function drawActor(wx, wy, name, color, opt = {}) {
 		const wl = wx - DRAW_W / 2, wt = wy - DRAW_H + 6;   // 足元を(wx,wy)付近に、上へ立たせる
 		const r = snapRect(wl, wt, DRAW_W, DRAW_H);
 		ctx.save();
-		if (opt.away) ctx.globalAlpha = 0.4;   // 離席中は薄く描く
-		else if (opt.work) ctx.globalAlpha = 0.55;   // 作業中も薄く（離席よりは濃く）
+		if (opt.away) ctx.globalAlpha = 0.4;   // 離席中は薄く描く（作業中は薄くしない。声をかけてよい人に見せるため）
 		drawAvatar(ctx, cfg, { dir: opt.dir || "down", frame, dx: r.x, dy: r.y, dw: r.w, dh: r.h });
 		ctx.restore();
 	} else {
 		// 画像未読込のあいだは丸で代用
 		ctx.save();
 		if (opt.away) ctx.globalAlpha = 0.4;
-		else if (opt.work) ctx.globalAlpha = 0.55;
 		ctx.beginPath(); ctx.arc(feet.x, feet.y, 10, 0, Math.PI * 2);
 		ctx.fillStyle = color; ctx.fill();
 		ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke();
@@ -542,11 +540,12 @@ function drawActorLabels(a) {
 		drawAwayLabel(feet.x, feet.y, a.awayMsg);
 	} else if (a.work) {
 		const feet = w2s(a.x, a.y);
-		drawAwayLabel(feet.x, feet.y, "", "作業中", "#5a6b8c");
+		// 作業中は離席と見分けられるよう、明るい青の札に青い文字（離席は暗い灰色に白い文字）
+		drawAwayLabel(feet.x, feet.y, "", "💻 作業中", "#e2e8fb", "#1f3fb0");
 	}
 	if (a.group) return;
 	const top = w2s(a.x, labelTopY(a));
-	const p = drawPillAt(top.x, top.y - u(6), a.name, a.color, a.away || a.work, false, a.mic);
+	const p = drawPillAt(top.x, top.y - u(6), a.name, a.color, a.away, false, a.mic);
 	// 吹き出しは名前の隣。まとまりのときと同じ位置関係にして、名前とも重ならないようにする
 	if (a.talk && !a.away) placeBubble(p.cx - p.w / 2, p.cx + p.w / 2, p.cy);
 }
@@ -687,7 +686,7 @@ function drawGroupLabel(g) {
 		const total = widthOf(row);
 		let x = cx - total / 2;
 		for (const m of row) {
-			drawPillAt(x + m.w / 2, y, m.a.name, m.a.color, m.a.away || m.a.work, talking(m), m.a.mic);
+			drawPillAt(x + m.w / 2, y, m.a.name, m.a.color, m.a.away, talking(m), m.a.mic);
 			x += m.w + GAP;
 		}
 		if (r === 0) topRow = { left: cx - total / 2, right: cx + total / 2, y };   // 吹き出しは一番上の段の隣
@@ -756,8 +755,8 @@ function drawPillAt(cx, cy, name, color, away, talking, mic) {
 }
 
 // 離席バッジ＋理由をアバターの下に表示
-// 足元の札。ふだんは「離席中：理由」。作業中は title に「作業中」、色を変えて使う（drawActorLabels）
-function drawAwayLabel(sx, sy, msg, title = "離席中", bg = "#4a5046") {
+// 足元の札。ふだんは「離席中：理由」。作業中は title・背景・文字の色を変えて使う（drawActorLabels）
+function drawAwayLabel(sx, sy, msg, title = "離席中", bg = "#4a5046", fg = "#fff") {
 	ctx.save();
 	ctx.font = `600 ${u(11)}px ${LABEL_FAMILY}`;
 	ctx.textAlign = "center";
@@ -794,7 +793,7 @@ function drawAwayLabel(sx, sy, msg, title = "離席中", bg = "#4a5046") {
 	ctx.shadowColor = "transparent";
 	ctx.shadowBlur = 0;
 	ctx.shadowOffsetY = 0;
-	ctx.fillStyle = "#fff";
+	ctx.fillStyle = fg;
 	lines.forEach((l, k) => ctx.fillText(l, cx, top + u(1.5) + lineH * (k + 0.5) + 0.5));
 	ctx.restore();
 }
