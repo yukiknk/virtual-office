@@ -28,6 +28,9 @@ import { GB, LIMIT_GB, NEAR, CALL_COOLDOWN_MS, LEAVE_GRACE_MS, STALE_MS, BOOT_GR
 import { talkGroupKeys } from "../public/talk.js";
 import { json, cleanAvatar, cleanComment, monthKey, levelFor, budgetLimits, zoneIdAtWorld, bytesPerSec, readWebhookUrl, escapeSlack } from "./helpers.js";
 
+// チャットの画像（data URL）の大きさの上限（文字数）。WebSocket の1通の上限（1MiB）に収める
+const CHAT_IMG_MAX = 900_000;
+
 export class Room {
   constructor(ctx, env) {
     this.ctx = ctx;
@@ -209,13 +212,13 @@ export class Room {
   // 1通ごとに KV から zones を読み直している。会話エリアは管理者が変えたときしか
   // 変わらないので毎回読む必要はないが、KV の読み出しは安く、持ち回すと管理者の
   // 「反映」との整合を取る手間が増えるため、そのままにしてある。
-  async relayChat(att, text) {
+  async relayChat(att, text, img = null) {
     let zones = [];
     try { zones = JSON.parse((await this.env.LAYOUT_KV.get("zones")) || "[]"); } catch { }
     // 位置がまだ届いていない人（接続直後・休眠明け）は、近いかどうか判定できないので
     // 配信の対象にしない。{0,0} 扱いにすると、左上にいる人どうしとして届いてしまう。
     // 届く相手の決まりは public/talk.js（画面の声の相手と共通）
-    const out = JSON.stringify({ t: "chat", id: att.id, name: att.name, text });
+    const out = JSON.stringify({ t: "chat", id: att.id, name: att.name, text, ...(img ? { img } : {}) });
     const sockets = this.sockets().map((ws) => ({ ws, a: ws.deserializeAttachment() })).filter((s) => s.a && s.a.name);
     const people = sockets.filter((s) => posOf(s.a)).map((s) => ({ id: s.a.id, ...posOf(s.a), name: s.a.name }));
     const keys = talkGroupKeys(people, (x, y) => zoneIdAtWorld(zones, x, y));
@@ -433,9 +436,12 @@ export class Room {
   }
 
   // 送信者と同じ会話エリア内、またはエリア外なら近接の人だけに配信（保存はしない）
+  // 画像（msg.img）は data URL で受け取り、そのまま同じ相手へ配る。保存はしない（文字と同じ）。
+  // 縮小は送る側（public/office/chatimage.js）で済ませてある。ここでは形と大きさだけ確かめる。
   async onChat(att, msg) {
     const text = String(msg.text || "").slice(0, 500).trim();
-    if (text) await this.relayChat(att, text);
+    const img = typeof msg.img === "string" && msg.img.length <= CHAT_IMG_MAX && /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(msg.img) ? msg.img : null;
+    if (text || img) await this.relayChat(att, text, img);
   }
 
   // 離席・着席。同じ状態の送り直し（再接続時など）では Slack へ通知しない。
