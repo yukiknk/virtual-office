@@ -97,6 +97,15 @@ export default {
       if (res) return res;
     }
 
+    // 本番のマップをこのサイトへ写す（ベータだけ。本番への接続 PROD があるときだけ動く）。
+    // 毎日の自動の同期（scheduled）を待たずに、すぐ写したいとき用
+    if (url.pathname === "/api/sync-from-prod" && req.method === "POST" && env.PROD) {
+      return json(await syncFromProd(env));
+    }
+    if (url.pathname === "/api/sync-from-prod" && req.method === "GET" && env.PROD) {
+      return json(JSON.parse((await env.LAYOUT_KV.get("lastSync")) || "null"));   // 前回の同期の結果
+    }
+
     // 組織固有の表示設定。ファイルがあればアセットとして配信されるのでここには来ない。
     // 公開リポジトリを clone した環境など、無い場合に空を返して 404 を避ける。
     if (url.pathname === "/config.local.js") {
@@ -105,4 +114,52 @@ export default {
 
     return new Response("Not found", { status: 404 });
   },
+
+  // 決まった時刻に動く（wrangler.jsonc の env.beta の triggers）。ベータに本番のマップを写す
+  async scheduled(event, env, ctx) {
+    if (env.PROD) ctx.waitUntil(syncFromProd(env));
+  },
 };
+
+// ── 本番のマップをベータへ写す ──
+//
+// ベータを、試す場所であると同時に、本番のマップの控えにもするためのもの。
+// 本番の API（/api/layout など。管理者ページが読むのと同じ）から読み、このサイトの KV に書く。
+// 写すのはマップの4つ（レイアウト・会話エリア・家具・管理者の看板）だけ。Slack の通知先は写さない
+// （ベータから本番のチャンネルへ通知が流れないように）。
+//
+// 本番へは、サービスバインディング PROD（wrangler.jsonc の env.beta の services）でつなぐ。
+// 同じアカウントの Worker どうしを直接つなぐ仕組みで、URL は要らない（同じアカウントの workers.dev の
+// URL を fetch すると断られることがあるため、こちらにしている）。本番には PROD を置かないので、本番では動かない。
+// 本番に対しては読み出し（GET）しかしない。
+//
+// 本番の値が空（[]）なのにベータに中身がある場合は、そのキーは写さない。本番のマップを
+// 誤って消してしまったときに、控えまで消えないようにするため。
+const SYNC_KEYS = ["layout", "zones", "furniture", "comments"];
+async function syncFromProd(env) {
+  const result = { at: new Date().toISOString(), keys: {} };
+  let changed = false;
+  for (const key of SYNC_KEYS) {
+    try {
+      const res = await env.PROD.fetch(`https://prod/api/${key}`);
+      if (!res.ok) { result.keys[key] = `失敗（${res.status}）`; continue; }
+      const text = await res.text();
+      const value = JSON.parse(text);
+      const current = (await env.LAYOUT_KV.get(key)) || "[]";
+      if (Array.isArray(value) && value.length === 0 && current !== "[]") { result.keys[key] = "本番が空なので写さない"; continue; }
+      if (text === current) { result.keys[key] = "変化なし"; continue; }
+      await env.LAYOUT_KV.put(key, text);
+      result.keys[key] = Array.isArray(value) ? `${value.length} 件を写した` : "写した";
+      changed = true;
+    } catch (e) {
+      result.keys[key] = `失敗（${String(e && e.message || e).slice(0, 100)}）`;
+    }
+  }
+  // 開いている画面があれば読み直させる（管理者ページの「反映」と同じ）
+  if (changed) {
+    try { await env.ROOM.get(env.ROOM.idFromName("main")).fetch("https://room/api/refresh"); } catch { }
+  }
+  await env.LAYOUT_KV.put("lastSync", JSON.stringify(result));
+  console.log("[sync]", JSON.stringify(result));
+  return result;
+}
