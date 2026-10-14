@@ -32,7 +32,7 @@ function loadSheets() {
 // 毎フレーム：移動 → 位置送信 → 音声更新（間引き）→ 在室者更新 → 描画
 //
 // 間引きの基準は「呼ぶたびに DOM を作り直す関数かどうか」。
-//   間引くもの   updateVoice / updateRoster / updatePeople … 変化検知を持たない
+//   間引くもの   updateVoice / updateRoster / updatePeople … 判定の計算が重め（書き換えは変化があるときだけ）
 //   間引かないもの updateChat / updateUsage / updateCallPrompt / updateCallAlert
 //                 … 内部に「前回と同じなら即 return」のガードがある
 let lastT = 0, lastVoice = 0, lastRoster = 0, lastDraw = 0;

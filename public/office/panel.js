@@ -288,7 +288,7 @@ export function updateCallAlert() {
 // つまり「いま自分の声が届く相手」の一覧であって、接続者の一覧ではない。
 // 接続者の全員を見るのは勤務者一覧（下）のほう。
 //
-// 呼ぶたびに innerHTML を作り直すので、main.js 側で500msに間引いている。
+// main.js 側で500msに間引いている。さらに、中身が変わったときだけ書き換える。
 export function updateRoster() {
 	const el = document.getElementById("roster");
 	if (!el) return;
@@ -296,8 +296,13 @@ export function updateRoster() {
 	// 自分が今いるグループだけを表示する
 	const g = myGroup();
 	const members = [{ name: store.me.name, self: true }, ...g.names.map((name) => ({ name, self: false }))];
-	el.innerHTML = renderGroup(g.zone ? g.zone.name : "近くの人", members, !g.zone);
+	const html = renderGroup(g.zone ? g.zone.name : "近くの人", members, !g.zone);
+	// 中身が同じなら書き換えない。毎回書き換えると、そのたびに左メニューの配置の計算と描き直しが走る
+	if (html === rosterHtml) return;
+	rosterHtml = html;
+	el.innerHTML = html;
 }
+let rosterHtml = "";
 
 // いま自分と同じ範囲にいる人（自分を除く）。声とチャットが届く相手。
 //
