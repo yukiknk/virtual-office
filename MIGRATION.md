@@ -35,7 +35,7 @@
 
 | 決めること | 備考 |
 |---|---|
-| **サブドメイン名** | URL に入る名前（`https://virtual-office.<サブドメイン>.workers.dev`）。世界で一意なので候補を3つ用意する。後から変えると全 URL が変わる |
+| **URL（Worker 名とサブドメイン）** | URL は `https://<Worker名>.<サブドメイン>.workers.dev`。2つとも決められる（4-2 と 4-5）。<br>・サブドメイン: アカウントに1つ。世界で一意なので候補を3つ用意する<br>・Worker 名: 今は `virtual-office`。変えるならここで決める。ベータは自動で `<Worker名>-beta` になる<br>どちらも、後から変えると全員の URL が変わる |
 | **Cloudflare アカウントの管理者** | 2名以上が望ましい |
 | **組織の GitHub の置き場所と権限** | リポジトリを作る組織（Organization）と、書き込める人 |
 | **移行日時** | 切り替えの間、数分〜十数分使えない時間がある。通話の少ない時間帯にする |
@@ -180,7 +180,29 @@ npx wrangler whoami      # 組織アカウントになったか
 $env:CLOUDFLARE_ACCOUNT_ID = "組織アカウントのID"   # ダッシュボードの右側に出ている
 ```
 
-### 4-5. KV を2つ作り、`wrangler.jsonc` を書き替える
+### 4-5. Worker 名を変える場合（変えないなら飛ばす）
+
+URL の最初の部分（`https://<Worker名>.<サブドメイン>.workers.dev`）を `virtual-office` から変えるときだけ行う。
+**最初のデプロイ（5-2）より前に**済ませる。あとから変えると、別の Worker として新しく作られ、マップの書き込みや
+シークレットの登録をやり直すことになる。
+
+`wrangler.jsonc` の2か所を、同じ新しい名前に書き替える:
+
+| 場所 | 書き替える値 | 意味 |
+|---|---|---|
+| トップレベルの `"name"` | 新しい Worker 名 | 本番の名前。URL の最初の部分になる |
+| `env.beta` の `services` の `"service"` | 同じ新しい Worker 名 | ベータが毎日マップを読みに行く本番の名前（`BETA.md` の「本番のマップを毎日写す」） |
+
+- ベータの名前は、自動で `<新しいWorker名>-beta` になる（書き替える場所は無い）
+- 使える文字: 半角の英小文字・数字・ハイフン。63文字まで（ベータは `-beta` が付くので、58文字以内にしておく）
+- コメント（`// デプロイ: npm run deploy → virtual-office` など）も、分かりやすいよう合わせて直しておく
+- `"service"` を直し忘れると、ベータのデプロイで「Worker が見つからない」と言われるか、毎日の同期が失敗する
+- `package.json` の `"name"` は npm の中だけの名前で、URL には関係しない。変えなくてよい
+- この変更は組織のリポジトリにコミットする
+
+以降の手順の `<Worker名>` は、この名前（変えなければ `virtual-office`）に読み替える。
+
+### 4-6. KV を2つ作り、`wrangler.jsonc` を書き替える
 
 ```powershell
 npx wrangler kv namespace create LAYOUT_KV   # 本番用
@@ -197,7 +219,7 @@ npm run kv:create-beta                       # ベータ用
 それ以外（`name`、`durable_objects`、`migrations`、`observability`）は変えない。
 この変更は組織のリポジトリにコミットする。
 
-### 4-6. シークレットを登録する
+### 4-7. シークレットを登録する
 
 本番とベータで別々に登録する（引き継がれない）。値は 4-3 の App ID と App Secret。
 
@@ -227,11 +249,11 @@ npm run layout:export -- https://<旧サイトのURL>
 
 ```powershell
 npm run deploy:beta
-npm run layout:import -- https://virtual-office-beta.<サブドメイン>.workers.dev layout-backup-<日付>
+npm run layout:import -- https://<Worker名>-beta.<サブドメイン>.workers.dev layout-backup-<日付>
 ```
 
-- ベータは本番の Worker（`virtual-office`）につないで毎日マップを写す（`BETA.md` の「本番のマップを毎日写す」）。
-  新しいアカウントにまだ本番が無いと、ベータのデプロイで `virtual-office` が見つからないと言われることがある。
+- ベータは本番の Worker（`<Worker名>`）につないで毎日マップを写す（`BETA.md` の「本番のマップを毎日写す」）。
+  新しいアカウントにまだ本番が無いと、ベータのデプロイで `<Worker名>` が見つからないと言われることがある。
   その場合は、先に `npm run deploy` で本番を出してから（まだ URL を周知していないので、誰も使っていない）ベータを出す
 
 ベータの URL を開き、次を確かめる（PC のブラウザを2つ、またはPCとスマホで2人分入る）。
@@ -239,7 +261,7 @@ npm run layout:import -- https://virtual-office-beta.<サブドメイン>.worker
 | # | 確かめること | 見るところ |
 |---|---|---|
 | 1 | マップ・会話エリア・家具・管理者の看板が出る | 旧サイトと同じ見た目か |
-| 2 | 2人で近づくと声が聞こえる。マイクの ON・OFF が相手の名前の印に出る | 新しい Realtime のアプリが使えているか（4-3、4-6） |
+| 2 | 2人で近づくと声が聞こえる。マイクの ON・OFF が相手の名前の印に出る | 新しい Realtime のアプリが使えているか（4-3、4-7） |
 | 3 | 画面共有が相手に映る | 同上 |
 | 4 | チャットが届く。会話エリアの中と外で届く相手が変わる | |
 | 5 | 呼び出しが鳴る（呼んだ側と呼ばれた側） | |
@@ -263,7 +285,7 @@ npx wrangler deploy --env beta --var SCREEN_OFF_GB:0.001 --var VOICE_OFF_GB:0.00
 
 ```powershell
 npm run deploy
-npm run layout:import -- https://virtual-office.<サブドメイン>.workers.dev layout-backup-<日付>
+npm run layout:import -- https://<Worker名>.<サブドメイン>.workers.dev layout-backup-<日付>
 ```
 
 - 管理者ページ（`/admin.html`）で **Slack の通知先を登録し直す**（Webhook URL は移らない）
@@ -285,7 +307,7 @@ npm run layout:import -- https://virtual-office.<サブドメイン>.workers.dev
 ```powershell
 cd C:\virtual_office
 npx wrangler whoami                   # 個人アカウントであることを必ず確かめる
-npx wrangler delete --name virtual-office
+npx wrangler delete --name virtual-office        # 旧環境の名前（新環境で Worker 名を変えても、ここは変えない）
 npx wrangler delete --name virtual-office-beta
 ```
 
@@ -319,7 +341,7 @@ git push --tags
 - 画面側の変更は、利用者が再読み込みするまで反映されない
 - 本番のマップをベータへ写す: `npm run kv:copy-to-beta`
 - マップの控えを取る: `npm run layout:export -- <本番のURL>`
-- ログ: ダッシュボードの Workers & Pages → virtual-office → Observability。サイトの `/api/server-log` と `/api/client-errors` でも見られる
+- ログ: ダッシュボードの Workers & Pages → <Worker名> → Observability。サイトの `/api/server-log` と `/api/client-errors` でも見られる
 
 ---
 
@@ -370,6 +392,8 @@ Cloudflare 側の都合で、部屋（Durable Object）が数時間おきに作�
 | `node` / `git` が見つからない | PowerShell を開き直す |
 | デプロイ先のアカウントが違う | `npx wrangler whoami` で確かめる。`$env:CLOUDFLARE_ACCOUNT_ID` で固定する |
 | URL のサブドメインが意図と違う | 4-2 の前にデプロイした。ダッシュボードで変更する（全 URL が変わる） |
+| URL の最初の部分が `virtual-office` のまま | 4-5 の `name` を書き替える前にデプロイした。書き替えてデプロイし直すと別の Worker ができるので、マップの書き込みとシークレットの登録をやり直し、古いほうは `npx wrangler delete --name virtual-office` で消す |
+| ベータの毎日の同期が失敗する | `env.beta` の `services` の `"service"` が本番の Worker 名と違う（4-5） |
 | ベータが本番のマップを見ている | `env.beta` の KV の id が本番と同じになっていないか |
 | 音声がつながらない | シークレットが `--env beta` 側に入っていない／App ID と Secret の組み合わせ違い |
 | マップが空 | `layout:import` の書き込み先 URL とフォルダを確かめる |

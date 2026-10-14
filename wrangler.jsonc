@@ -1,6 +1,8 @@
 {
 	// ── 本番（トップレベル） ──
 	// デプロイ: npm run deploy        → virtual-office
+	// name は Worker 名で、URL の最初の部分になる（https://<name>.<サブドメイン>.workers.dev）。
+	// 変えるときは env.beta の services の "service" も同じ名前にする（MIGRATION.md の 4-5）
 	"name": "virtual-office",
 	"main": "src/index.js",
 	"compatibility_date": "2026-08-01",
@@ -62,7 +64,7 @@
 			"services": [
 				{
 					"binding": "PROD",
-					"service": "virtual-office"
+					"service": "virtual-office"   // 本番の Worker 名（トップレベルの name と同じにする）
 				}
 			],
 			"kv_namespaces": [

@@ -1,15 +1,15 @@
 # ベータ（テスト）環境
 
-本番 `virtual-office` とは別の Worker `virtual-office-beta` を立てる。
+本番 `<Worker名>`（今は `virtual-office`）とは別の Worker `<Worker名>-beta` を立てる。Worker 名は `wrangler.jsonc` の `name`（変え方は `MIGRATION.md` の 4-5）。
 **KV・Durable Object・URL がすべて分かれる**ので、ベータで何をしても本番には影響しない。
 
 | | 本番 | ベータ |
 |---|---|---|
-| Worker 名 | `virtual-office` | `virtual-office-beta` |
+| Worker 名 | `<Worker名>` | `<Worker名>-beta` |
 | デプロイ | `npm run deploy` | `npm run deploy:beta` |
 | KV | 既存の名前空間 | 新規に作る名前空間 |
 | Durable Object (`Room`) | 本番の部屋 | 別の部屋（位置・チャット・看板・転送量カウンタが独立） |
-| URL | 現在の workers.dev | `virtual-office-beta.<サブドメイン>.workers.dev` |
+| URL | 現在の workers.dev | `<Worker名>-beta.<サブドメイン>.workers.dev` |
 
 ブランチは分けない。`main` が唯一の正で、**どの環境に出したかはデプロイ先とタグで区別する**。
 
@@ -42,7 +42,7 @@ npm run kv:create-beta
 npm run deploy:beta
 ```
 
-デプロイ後に表示される `https://virtual-office-beta.<サブドメイン>.workers.dev` がベータの URL。
+デプロイ後に表示される `https://<Worker名>-beta.<サブドメイン>.workers.dev` がベータの URL。
 
 ### 4. シークレット（Realtime / SFU）を設定
 
@@ -162,17 +162,17 @@ npm run deploy:beta
 すぐ写したいとき（デプロイ直後の確認など）:
 
 ```powershell
-Invoke-RestMethod -Method Post https://virtual-office-beta.<サブドメイン>.workers.dev/api/sync-from-prod
+Invoke-RestMethod -Method Post https://<Worker名>-beta.<サブドメイン>.workers.dev/api/sync-from-prod
 ```
 
-前回の同期の結果を見る: ブラウザで `https://virtual-office-beta.<サブドメイン>.workers.dev/api/sync-from-prod` を開く。
+前回の同期の結果を見る: ブラウザで `https://<Worker名>-beta.<サブドメイン>.workers.dev/api/sync-from-prod` を開く。
 
 ### 本番のマップをベータの控えから戻す
 
 本番のマップを誤って壊したときは、**次の 3:00 の同期より前に**、ベータから本番へ書き戻す:
 
 ```powershell
-npm run layout:export -- https://virtual-office-beta.<サブドメイン>.workers.dev
-npm run layout:import -- https://virtual-office.<サブドメイン>.workers.dev layout-backup-<日付>
+npm run layout:export -- https://<Worker名>-beta.<サブドメイン>.workers.dev
+npm run layout:import -- https://<Worker名>.<サブドメイン>.workers.dev layout-backup-<日付>
 ```
 
