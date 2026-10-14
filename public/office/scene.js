@@ -202,7 +202,7 @@ export function needsFastDraw() {
 export function draw() {
 	updateCamera();
 	drawBase(ctx, canvas);
-	drawGround();           // 床（下）と敷物（中）。作り置きの1枚を貼るだけ
+	drawGround();           // 床・敷物・壁・家具。作り置きの1枚を貼るだけ
 	drawWallsAndActors();   // 壁とアバターは足元の行で前後を判定して描く
 	drawZones();            // 会話エリアのホバー表示
 	drawComments();         // コメント（メモ）は一番上のレイヤー
@@ -346,15 +346,9 @@ function resizeComment(c, corner, p, orig) {
 //       → そのアバターより手前に来るべき壁だけ描き直し、体を壁の裏に隠す。
 //       → 最後に、名前などのラベルを壁より上に描く（壁に隠れると読めないため）。
 function drawWallsAndActors() {
-	// 1) 壁（objectレイヤー）→ 家具（壁の一つ上）の順に描く。アバターはこの上。
-	drawLayer("object");
-	drawFurniture();
-
-	// 壁セルの集合（アバターが壁の上に立っているかの判定に使う）
-	const wallCells = new Set();
-	for (const item of store.layout) {
-		if ((item.layer || "floor") === "object") wallCells.add(`${item.col},${item.row}`);
-	}
+	// 1) 壁と家具は drawGround の作り置きに入っている。アバターはこの上。
+	// 壁セルの集合（アバターが壁の上に立っているかの判定に使う）も作り置きのもの
+	const wallCells = ground ? ground.wallCells : new Set();
 
 	// 2) アバターを集める（自分＋補間後の他人）。南（下）の人ほど後に描く。
 	const actors = [];
@@ -398,8 +392,7 @@ function drawWallsAndActors() {
 function coverWalls(wx, wy, wallCells) {
 	const ar = Math.floor(wy / GRID), ac = Math.floor(wx / GRID);
 	const onWall = wallCells.has(`${ac},${ar}`);
-	for (const item of store.layout) {
-		if ((item.layer || "floor") !== "object") continue;
+	for (const item of (ground ? ground.walls : [])) {   // 壁の一覧は drawGround が作り置きしている
 		// 見る範囲を絞って軽くしている。数字はアバターの見た目の大きさから決めたもので、
 		// ±4列は名前ラベルの幅、-3〜+2行はアバター（56px≒2マス）＋名前ラベルの高さ。
 		// 狭めすぎると、壁の裏に隠れるべき頭やラベルがはみ出して見える。
@@ -421,13 +414,14 @@ function snapRect(wx, wy, ww, wh) {
 	return { x: x0, y: y0, w: snap(b.x) - x0, h: snap(b.y) - y0 };
 }
 
-// ── 床と敷物の作り置き ──
-// 床と敷物は人の前後関係に関わらず、管理者が「反映」するまで変わらない。毎フレーム
-// 1マスずつ描くと、マス数（最大1500）ぶんの drawImage が毎回走り、高解像度で
-// 毎秒120回描く Mac ではファンが回るほど重くなっていた。そこでマップ全体を1枚の
-// キャンバスに描いておき、毎フレームはそれを貼るだけにする。
+// ── 床・敷物・壁・家具の作り置き ──
+// これらは管理者が「反映」するまで変わらない。毎フレーム1つずつ描くと、マス数（最大1500）と
+// 家具の数ぶんの drawImage が毎回走り、高解像度で毎秒120回描く Mac ではファンが回るほど
+// 重くなっていた。そこでマップ全体を1枚のキャンバスに描いておき、毎フレームはそれを貼るだけにする。
+// 重ね順はこれまでと同じ（床 → 敷物 → 壁 → 家具 → 人）。人より手前に来る壁は、人を描いたあとに
+// coverWalls がその部分だけ描き直す。
 //
-// 描き直すのは、倍率・画面の解像度・レイアウト・画像シートの読み込み状況が変わったときだけ。
+// 描き直すのは、倍率・画面の解像度・レイアウト・家具・画像シートの読み込み状況が変わったときだけ。
 // setViewport が1マスを実ピクセルの整数に丸めているので、マスごとに描いたときと
 // 同じ位置に同じ絵が並ぶ（継ぎ目は出ない）。
 let ground = null;   // { canvas, key, layout }
@@ -435,14 +429,14 @@ function drawGround() {
 	const dpr = window.devicePixelRatio || 1;
 	const cell = Math.round(GRID * getScale() * dpr);   // 1マスの実ピクセル
 	const key = `${cell}|${Object.values(SHEETS).map((s) => (s.ready ? 1 : 0)).join("")}`;
-	if (!ground || ground.key !== key || ground.layout !== store.layout) {
+	if (!ground || ground.key !== key || ground.layout !== store.layout || ground.furniture !== store.furniture) {
 		const c = (ground && ground.canvas) || document.createElement("canvas");
 		c.width = Math.round(WORLD.w / GRID) * cell;
 		c.height = Math.round(WORLD.h / GRID) * cell;
 		const g = c.getContext("2d");
 		g.clearRect(0, 0, c.width, c.height);
 		g.imageSmoothingEnabled = false;
-		for (const layer of ["floor", "rug"]) {
+		for (const layer of ["floor", "rug", "object"]) {
 			for (const item of store.layout) {
 				if ((item.layer || "floor") !== layer) continue;
 				const sheet = SHEETS[item.cat || "floor"];
@@ -450,19 +444,23 @@ function drawGround() {
 				g.drawImage(sheet.img, item.tileCol * 32, item.tileRow * 32, 32, 32, item.col * cell, item.row * cell, cell, cell);
 			}
 		}
-		ground = { canvas: c, key, layout: store.layout };
+		// 家具（壁の一つ上）。配列順（後ろほど手前）に、シートの選択範囲を等倍で描く
+		const px = (v) => Math.round((v * cell) / GRID);   // ワールド座標 → 作り置きの実ピクセル（snapRect と同じ丸め）
+		for (const f of store.furniture) {
+			const sheet = SHEETS[f.cat];
+			if (!sheet || !sheet.ready) continue;
+			const x0 = px(f.x), y0 = px(f.y);
+			g.drawImage(sheet.img, f.sx, f.sy, f.sw, f.sh, x0, y0, px(f.x + f.sw) - x0, px(f.y + f.sh) - y0);
+		}
+		// 壁のマスの集合と一覧（drawWallsAndActors と coverWalls が毎フレーム使う）も、ここで作り直す
+		const walls = store.layout.filter((i) => (i.layer || "floor") === "object");
+		ground = { canvas: c, key, layout: store.layout, furniture: store.furniture, walls, wallCells: new Set(walls.map((i) => `${i.col},${i.row}`)) };
 	}
 	const o = w2s(0, 0);
 	ctx.imageSmoothingEnabled = false;
 	ctx.drawImage(ground.canvas, o.x, o.y, ground.canvas.width / dpr, ground.canvas.height / dpr);
 }
 
-function drawLayer(layerKey) {
-	for (const item of store.layout) {
-		if ((item.layer || "floor") !== layerKey) continue;
-		drawTile(item);
-	}
-}
 
 // 1マス分のタイルを描く（隣のマスの境界と合わせて継ぎ目なく描く）
 function drawTile(item) {
@@ -473,16 +471,6 @@ function drawTile(item) {
 	ctx.drawImage(sheet.img, item.tileCol * 32, item.tileRow * 32, 32, 32, r.x, r.y, r.w, r.h);
 }
 
-// 家具（壁の一つ上）：配列順（後ろほど手前）に、シートの選択範囲を等倍で描く
-function drawFurniture() {
-	ctx.imageSmoothingEnabled = false;
-	for (const f of store.furniture) {
-		const sheet = SHEETS[f.cat];
-		if (!sheet || !sheet.ready) continue;
-		const r = snapRect(f.x, f.y, f.sw, f.sh);
-		ctx.drawImage(sheet.img, f.sx, f.sy, f.sw, f.sh, r.x, r.y, r.w, r.h);
-	}
-}
 
 // 会話エリアは普段は非表示。カーソルを乗せたエリアだけ薄く表示する。
 function drawZones() {
