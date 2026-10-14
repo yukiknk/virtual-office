@@ -55,13 +55,20 @@
 			<!-- 文字数の上限はサーバー側（src/room.js）でも切っている。
 			     ここを変えるだけでは効かないので、変更するときは両方を合わせること。 -->
 			<form id="chat-form">
+				<!-- 送る予定の画像（panel.js）。貼り付け・📎・ドロップで入り、× で外せる -->
+				<div id="chat-preview" hidden><img alt="送る画像"><button type="button" id="chat-preview-remove" aria-label="画像を外す">×</button></div>
 				<!-- placeholder は panel.js が書き換える。チャットは全員ではなく声が届く範囲の人にだけ
 				     配られるので、いま誰に届くか（近くの人／会話エリアの名前）をここに出す。 -->
 				<textarea id="chat-input" placeholder="近くの人へのメッセージ" maxlength="500" rows="1"
 					title="Enter で送信 ／ Shift+Enter・Ctrl+Enter で改行"></textarea>
 				<!-- 入力欄の右下に重ねて置く（位置は style.css）。文字ではなく記号なので aria-label で読みを与える -->
 				<button type="submit" id="chat-send" aria-label="送信" title="送信（Enter）">➤</button>
+				<!-- 画像を選んで貼る（スマホ向け。PC は Ctrl+V でも貼れる） -->
+				<button type="button" id="chat-attach" aria-label="画像を貼る" title="画像を貼る（Ctrl+V でも貼れます）">📎</button>
+				<input type="file" id="chat-file" accept="image/*" hidden>
 			</form>
+			<!-- チャットの画像を大きく出す（panel.js）。押すと閉じる -->
+			<div id="chat-viewer" hidden><img alt="画像"></div>
 
 			<!-- 状態を変えないボタン2つを横に並べる。よく使う「看板を作成」に手が届きやすいよう、チャットの下に置く。
 			     離席・退出とは役割が違うので別の行にしてある

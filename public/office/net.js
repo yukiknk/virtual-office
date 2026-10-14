@@ -8,6 +8,7 @@ import { store } from "./store.js";
 import { loadAll } from "./api.js";
 import { applyBudget, resumeInfo, onServerLost, onServerJoined } from "./voice.js";
 import { playAlarm, showCallNotification } from "./alarm.js";
+import { toBlobUrl } from "./chatimage.js";
 
 // このタブを見分ける ID。再接続しても、ページを再読み込みしても変わらない。
 // サーバーはこれを見て「同じ人がつなぎ直しただけ」を判別し、Slack へ
@@ -140,7 +141,8 @@ function onState(msg) {
 }
 
 function onChat(msg) {
-	pushMessage({ id: msg.id, name: msg.name, text: msg.text, self: msg.id === store.myId });
+	const img = typeof msg.img === "string" ? toBlobUrl(msg.img) : null;   // 画像は表示用の短い URL にして持つ
+	pushMessage({ id: msg.id, name: msg.name, text: msg.text || "", img, self: msg.id === store.myId });
 }
 
 // 呼び出された：音・ブラウザ通知・画面のバナー・チャット欄への記録
@@ -168,7 +170,10 @@ function onCallSent(msg) {
 function pushMessage(m) {
 	m.at = Date.now();
 	store.messages.push(m);
-	if (store.messages.length > 50) store.messages.splice(0, store.messages.length - 50);
+	if (store.messages.length > 50) {
+		// 落とすメッセージの画像は、表示用の URL を手放してメモリを返す
+		for (const old of store.messages.splice(0, store.messages.length - 50)) if (old.img) URL.revokeObjectURL(old.img);
+	}
 	store.chatSeq++;
 }
 
@@ -194,7 +199,7 @@ function send(obj) {
 export const sendCall = (toId) => send({ t: "call", to: toId });          // 近接・離席・連打はサーバー側でも検査される
 export const sendComment = (comment) => send({ t: "comment_add", comment });   // 看板の追加・移動（サーバーが全員へ配信）
 export const removeComment = (id) => send({ t: "comment_remove", id });
-export const sendChat = (text) => send({ t: "chat", text });              // サーバーがエリア内・近接の人へ配信
+export const sendChat = (text, img) => send(img ? { t: "chat", text, img } : { t: "chat", text });              // サーバーがエリア内・近接の人へ配信
 export const sendAway = (away, msg) => send({ t: "away", away, msg });
 
 // 位置送信（動いていれば約15回/秒、止まっていても2秒ごと）。

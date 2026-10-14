@@ -12,6 +12,7 @@
 import { GRID, WORLD } from "../map.js";
 import { store, zoneIdAt, talkPeers } from "./store.js";
 import { sendComment, sendChat, sendAway, sendCall } from "./net.js";
+import { shrinkImage } from "./chatimage.js";
 import { stopMoving } from "./move.js";
 import { updateVoice } from "./voice.js";
 import { createRichEditor } from "../richtext.js";
@@ -350,13 +351,65 @@ export function initChatUI() {
 		input.style.height = input.scrollHeight + 2 + "px";   // +2 は上下の枠線ぶん
 		if (empty) input.value = "";
 	};
+	// ── 貼る画像 ──
+	// 貼り付け（Ctrl+V）・📎 で選ぶ・入力欄へのドロップの3通り。送るまでは入力欄の上に小さく出し、× で外せる。
+	let pendingImg = null;   // 送る予定の画像（data URL）
+	const preview = document.getElementById("chat-preview");
+	const setPending = (data) => {
+		pendingImg = data;
+		if (!preview) return;
+		preview.hidden = !data;
+		const im = preview.querySelector("img");
+		if (im) im.src = data || "";
+	};
+	const takeFile = async (file) => {
+		if (!file) return;
+		const data = await shrinkImage(file);
+		if (!data) { alert("この画像は大きすぎるか、読み込めませんでした。"); return; }
+		setPending(data);
+		input.focus();
+	};
+	const pickImage = (list) => [...(list || [])].find((f) => f && /^image\//.test(f.type));
+	if (input) input.addEventListener("paste", (e) => {
+		const items = e.clipboardData ? [...e.clipboardData.items] : [];
+		const item = items.find((i) => i.kind === "file" && /^image\//.test(i.type));
+		if (!item) return;   // 文字の貼り付けはそのまま
+		e.preventDefault();
+		takeFile(item.getAsFile());
+	});
+	form.addEventListener("dragover", (e) => { e.preventDefault(); });
+	form.addEventListener("drop", (e) => {
+		const file = pickImage(e.dataTransfer && e.dataTransfer.files);
+		if (!file) return;
+		e.preventDefault();
+		takeFile(file);
+	});
+	const fileInput = document.getElementById("chat-file");
+	const attach = document.getElementById("chat-attach");
+	if (attach && fileInput) attach.addEventListener("click", () => fileInput.click());
+	if (fileInput) fileInput.addEventListener("change", () => { takeFile(pickImage(fileInput.files)); fileInput.value = ""; });
+	const removeBtn = document.getElementById("chat-preview-remove");
+	if (removeBtn) removeBtn.addEventListener("click", () => setPending(null));
+
 	const submit = () => {
 		const text = input.value.trim();
-		if (!text) return;
-		sendChat(text);
+		if (!text && !pendingImg) return;
+		sendChat(text, pendingImg);
 		input.value = "";
+		setPending(null);
 		autosize();
 	};
+
+	// チャットの画像を押すと大きく出す（もう一度押すか、外側を押すと閉じる）
+	const viewer = document.getElementById("chat-viewer");
+	const log0 = document.getElementById("chat-log");
+	if (log0 && viewer) log0.addEventListener("click", (e) => {
+		const im = e.target.closest ? e.target.closest("img.chat-img") : null;
+		if (!im) return;
+		viewer.querySelector("img").src = im.src;
+		viewer.hidden = false;
+	});
+	if (viewer) viewer.addEventListener("click", () => { viewer.hidden = true; viewer.querySelector("img").src = ""; });
 	if (input) { input.addEventListener("input", autosize); autosize(); }
 
 	// 「一番下を見ているか」は、利用者がスクロールしたときにだけ更新する。
@@ -611,7 +664,8 @@ export function updateChat() {
 			html += `<div class="chat-msg call">${esc(m.text)}</div>`;
 			continue;
 		}
-		html += `<div class="chat-msg${m.self ? " self" : ""}"><span class="chat-name"><span>${esc(m.name)}</span><span class="chat-time">${hhmm(m.at)}</span></span>${esc(m.text)}</div>`;
+		const img = m.img ? `<img class="chat-img" src="${esc(m.img)}" alt="画像" title="押すと大きく表示">` : "";
+		html += `<div class="chat-msg${m.self ? " self" : ""}"><span class="chat-name"><span>${esc(m.name)}</span><span class="chat-time">${hhmm(m.at)}</span></span>${linkify(esc(m.text))}${img}</div>`;
 	}
 	// 一番下を見ているときだけ新着に追従する。さかのぼって読んでいる最中に
 	// 下へ引き戻されないようにするため。自分が送ったときは、どこを見ていても下へ送る。
@@ -650,6 +704,20 @@ function renderGroup(title, members, isFree) {
 		h += `<div class="rperson${p.self ? " self" : ""}"><span class="dot"></span><span class="nm">${esc(p.name)}</span>${p.self ? '<span class="you">あなた</span>' : ""}</div>`;
 	}
 	return h + "</div>";
+}
+
+// チャットの本文の URL をリンクにする。esc を通したあとの文字に使う（URL の中の & は &amp; に
+// なっているが、属性の中ではブラウザが & に戻して読むので、そのままでよい）。
+// URL に使える文字（英数字と記号）だけを拾う。日本語が続けて書かれていても、そこで切れる
+// （「https://example.com。見てください」など）。文の終わりの句読点や閉じかっこも含めない。
+function linkify(html) {
+	return html.replace(/https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/g, (url) => {
+		// 末尾の句読点・閉じかっこと、引用符や <> を esc した文字（&quot; など）は URL に含めない
+		const m = /(?:[).,!?]|&(?:quot|lt|gt);)+$/.exec(url);
+		const tail = m ? m[0] : "";
+		const href = tail ? url.slice(0, -tail.length) : url;
+		return `<a href="${href}" target="_blank" rel="noopener noreferrer">${href}</a>${tail}`;
+	});
 }
 
 // HTML に差し込む前に記号を実体参照へ変える。
