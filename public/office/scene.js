@@ -24,6 +24,8 @@ const LERP_DELAY = 120;     // 他人は120ms過去を補間して滑らかに�
 const MIN_SCALE = 0.6;
 // 見ている場所の中心（ワールド座標）。目標へ少しずつ寄せて、場面の切り替わりを滑らかにする。
 let camX = null, camY = null;
+let cameraMoving = false;   // 見る場所がまだ目標へ向かって動いている途中か（needsFastDraw）
+let lastPointerAt = 0;      // マップの上でカーソルが最後に動いた時刻（needsFastDraw）
 const SIGN_ALPHA = 0.7;     // 人と重なっている看板の濃さ（下の人が透けて見える程度）
 
 // このフレームで描いた人の一覧。drawWallsAndActors が作り、drawComments が
@@ -61,6 +63,7 @@ export function initPointer() {
 	// カーソル位置の記録＋看板の移動／リサイズ
 	canvas.addEventListener("pointermove", (e) => {
 		hover = s2w(canvas, e.clientX, e.clientY);
+		lastPointerAt = Date.now();
 		if (!dragComment) return;
 		if (!dragMoved && Math.hypot(hover.x - dragStart.x, hover.y - dragStart.y) > 4) dragMoved = true;
 		if (!dragMoved) return;
@@ -166,7 +169,7 @@ function placeBubble(left, right, cy) {
 // 基本は自分が中央。勤務者一覧で人を選んでいるあいだは、その人を映す
 // （画面の外にいると、場所を示す輪が見えないため）。
 function updateCamera() {
-	if (!isScrolling()) { camX = camY = null; return; }
+	if (!isScrolling()) { camX = camY = null; cameraMoving = false; return; }
 	let tx = store.me.x, ty = store.me.y;
 	const loc = store.locate;
 	const o = loc && Date.now() <= loc.until ? store.others.get(loc.id) : null;
@@ -179,7 +182,21 @@ function updateCamera() {
 	camY += (ty - camY) * 0.25;
 	if (Math.abs(tx - camX) < 0.5) camX = tx;
 	if (Math.abs(ty - camY) < 0.5) camY = ty;
+	cameraMoving = camX !== tx || camY !== ty;
 	lookAt(camX, camY);
+}
+
+// 毎秒30回描く必要があるか（main.js が描く回数を決めるのに使う）。
+// 誰も動いておらず、マウスも触っていないときは、絵はほとんど変わらない。そのときまで毎秒30回
+// 描き直すと、画面が見えている間ずっと CPU を使い続ける（Mac でファンが回るという報告があった）。
+// 動きがあるときだけ毎秒30回にし、それ以外は間引く（話している印の点の動き程度は追える回数にする）。
+export function needsFastDraw() {
+	if (store.me.moving || dragComment || cameraMoving) return true;
+	if (store.locate && Date.now() <= store.locate.until) return true;   // 場所を示す輪が広がっている
+	const now = Date.now();
+	if (now - lastPointerAt < 500) return true;          // カーソルを動かしている（看板やエリアの表示）
+	if (now - (store.motionAt || 0) < 500) return true;   // ほかの人が動いている（net.js が記録）
+	return false;
 }
 
 export function draw() {
