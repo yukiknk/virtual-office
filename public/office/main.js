@@ -19,6 +19,7 @@ import {
 import { initAlarm } from "./alarm.js";
 import { initAudioSettings } from "./audio.js";
 import { initMobile } from "./mobile.js";
+import { initPresence } from "./presence.js";
 
 // 画像シートの読み込みを始める。onload を src より先に設定しないと、
 // キャッシュ済みの画像で完了を取り逃す。
@@ -120,6 +121,7 @@ if (!read(KEY.name)) {
 	initRailToggle();   // マップの幅が変わるので、下の fit() より前に済ませる
 	initAlarm();
 	initMobile();   // スマホの画面の部品（幅が広いときは CSS で隠れていて、何もしない）
+	initPresence(); // 作業中（画面から目を離しているか）の判定
 
 	// 初回描画とループ開始
 	fit();

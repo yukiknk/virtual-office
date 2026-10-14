@@ -55,7 +55,7 @@ export const store = {
 	callAlert: null,      // 呼び出しを受けたときの画面バナー { name, at }。数秒で消す
 
 	// ── 自分（位置はワールド座標） ──
-	me: { x: WORLD.w / 2, y: WORLD.h / 2, name: "ゲスト", away: false, awayMsg: "", dir: "down", moving: false, talking: false, avatar: { ...DEFAULT_AVATAR } },
+	me: { x: WORLD.w / 2, y: WORLD.h / 2, name: "ゲスト", away: false, awayMsg: "", dir: "down", moving: false, talking: false, working: false, avatar: { ...DEFAULT_AVATAR } },
 
 	// ── 他の接続者 ──
 	// id -> { name, sfu, buf: [{at,x,y}] }

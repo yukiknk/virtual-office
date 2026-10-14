@@ -365,9 +365,9 @@ function drawWallsAndActors() {
 			if (Math.hypot(dx, dy) > 1) { moving = true; o.dir = faceDir(dx, dy); }
 		}
 		// 話している人はマイクが ON のはず。マイクの状態を送らない古い画面の人も、話していれば ON と見せる
-		actors.push({ id, x: p.x, y: p.y, name: o.name, color: "#b23a2a", away: o.away, awayMsg: o.awayMsg, talk: o.talk, mic: !!(o.mic || o.talk), dir: o.dir || "down", moving, avatar: o.avatar || DEFAULT_AVATAR });
+		actors.push({ id, x: p.x, y: p.y, name: o.name, color: "#b23a2a", away: o.away, awayMsg: o.awayMsg, work: !o.away && o.work, talk: o.talk, mic: !!(o.mic || o.talk), dir: o.dir || "down", moving, avatar: o.avatar || DEFAULT_AVATAR });
 	}
-	actors.push({ x: store.me.x, y: store.me.y, name: store.me.name, color: "#1f3fb0", away: store.me.away, awayMsg: store.me.awayMsg, talk: store.me.talking, mic: !!store.me.mic, dir: store.me.dir, moving: store.me.moving, avatar: store.me.avatar });
+	actors.push({ x: store.me.x, y: store.me.y, name: store.me.name, color: "#1f3fb0", away: store.me.away, awayMsg: store.me.awayMsg, work: !store.me.away && store.me.working, talk: store.me.talking, mic: !!store.me.mic, dir: store.me.dir, moving: store.me.moving, avatar: store.me.avatar });
 	actors.sort((a, b) => a.y - b.y);   // 南（下）にいる人ほど後に描く＝手前になる
 	lastActors = actors;
 	lastGroups = groupActors(actors);
@@ -515,12 +515,14 @@ function drawActor(wx, wy, name, color, opt = {}) {
 		const r = snapRect(wl, wt, DRAW_W, DRAW_H);
 		ctx.save();
 		if (opt.away) ctx.globalAlpha = 0.4;   // 離席中は薄く描く
+		else if (opt.work) ctx.globalAlpha = 0.55;   // 作業中も薄く（離席よりは濃く）
 		drawAvatar(ctx, cfg, { dir: opt.dir || "down", frame, dx: r.x, dy: r.y, dw: r.w, dh: r.h });
 		ctx.restore();
 	} else {
 		// 画像未読込のあいだは丸で代用
 		ctx.save();
 		if (opt.away) ctx.globalAlpha = 0.4;
+		else if (opt.work) ctx.globalAlpha = 0.55;
 		ctx.beginPath(); ctx.arc(feet.x, feet.y, 10, 0, Math.PI * 2);
 		ctx.fillStyle = color; ctx.fill();
 		ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke();
@@ -538,10 +540,13 @@ function drawActorLabels(a) {
 	if (a.away) {
 		const feet = w2s(a.x, a.y);
 		drawAwayLabel(feet.x, feet.y, a.awayMsg);
+	} else if (a.work) {
+		const feet = w2s(a.x, a.y);
+		drawAwayLabel(feet.x, feet.y, "", "作業中", "#5a6b8c");
 	}
 	if (a.group) return;
 	const top = w2s(a.x, labelTopY(a));
-	const p = drawPillAt(top.x, top.y - u(6), a.name, a.color, a.away, false, a.mic);
+	const p = drawPillAt(top.x, top.y - u(6), a.name, a.color, a.away || a.work, false, a.mic);
 	// 吹き出しは名前の隣。まとまりのときと同じ位置関係にして、名前とも重ならないようにする
 	if (a.talk && !a.away) placeBubble(p.cx - p.w / 2, p.cx + p.w / 2, p.cy);
 }
@@ -682,7 +687,7 @@ function drawGroupLabel(g) {
 		const total = widthOf(row);
 		let x = cx - total / 2;
 		for (const m of row) {
-			drawPillAt(x + m.w / 2, y, m.a.name, m.a.color, m.a.away, talking(m), m.a.mic);
+			drawPillAt(x + m.w / 2, y, m.a.name, m.a.color, m.a.away || m.a.work, talking(m), m.a.mic);
 			x += m.w + GAP;
 		}
 		if (r === 0) topRow = { left: cx - total / 2, right: cx + total / 2, y };   // 吹き出しは一番上の段の隣
@@ -751,7 +756,8 @@ function drawPillAt(cx, cy, name, color, away, talking, mic) {
 }
 
 // 離席バッジ＋理由をアバターの下に表示
-function drawAwayLabel(sx, sy, msg) {
+// 足元の札。ふだんは「離席中：理由」。作業中は title に「作業中」、色を変えて使う（drawActorLabels）
+function drawAwayLabel(sx, sy, msg, title = "離席中", bg = "#4a5046") {
 	ctx.save();
 	ctx.font = `600 ${u(11)}px ${LABEL_FAMILY}`;
 	ctx.textAlign = "center";
@@ -762,7 +768,7 @@ function drawAwayLabel(sx, sy, msg) {
 	const maxW = u(220);
 	const lines = [];
 	let line = "";
-	for (const ch of "離席中" + (msg ? "：" + msg : "")) {
+	for (const ch of title + (msg ? "：" + msg : "")) {
 		if (ch === "\n") { lines.push(line); line = ""; continue; }
 		// 句読点や閉じかっこは行の先頭に送らない（少しはみ出しても前の行に付ける）
 		if (line && !"、。，．）」』】！？".includes(ch) && ctx.measureText(line + ch).width > maxW) { lines.push(line); line = ch; }
@@ -782,7 +788,7 @@ function drawAwayLabel(sx, sy, msg) {
 	ctx.shadowOffsetY = 1;
 	ctx.beginPath();
 	ctx.roundRect(cx - w / 2, top, w, h, Math.min(h / 2, u(9)));
-	ctx.fillStyle = "#4a5046";
+	ctx.fillStyle = bg;
 	ctx.fill();
 	// 文字に枠と同じ影が付かないよう、描く前に影を消す
 	ctx.shadowColor = "transparent";

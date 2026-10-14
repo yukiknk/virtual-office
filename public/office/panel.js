@@ -480,15 +480,15 @@ function renderPeople() {
 		const z = id ? store.zones.find((z) => z.id === id) : null;
 		return z ? z.name : "";
 	};
-	const people = [{ name: store.me.name, self: true, away: store.me.away, awayMsg: store.me.awayMsg, where: whereOf(store.me.x, store.me.y) }];
+	const people = [{ name: store.me.name, self: true, away: store.me.away, awayMsg: store.me.awayMsg, work: store.me.working, where: whereOf(store.me.x, store.me.y) }];
 	for (const [id, o] of store.others) {
 		const p = o.buf[o.buf.length - 1];
-		people.push({ id, name: o.name, self: false, away: o.away, awayMsg: o.awayMsg, where: p ? whereOf(p.x, p.y) : "" });
+		people.push({ id, name: o.name, self: false, away: o.away, awayMsg: o.awayMsg, work: o.work, where: p ? whereOf(p.x, p.y) : "" });
 	}
 	let html = `<div class="people-count"><span>${people.length}人が接続中</span><span>名前を押すと場所を表示</span></div>`;
 	for (const p of people) {
 		html += `<div class="person-row${p.self ? " self" : " other"}"${p.self ? "" : ` data-id="${esc(p.id)}"`}><span class="dot"></span><span class="nm">${esc(p.name)}</span>${p.self ? "（自分）" : ""}`
-			+ `<span class="where">${esc(p.where)}</span>${p.away ? `<span class="away-tag">離席中${p.awayMsg ? "：" + esc(p.awayMsg) : ""}</span>` : ""}</div>`;
+			+ `<span class="where">${esc(p.where)}</span>${p.away ? `<span class="away-tag">離席中${p.awayMsg ? "：" + esc(p.awayMsg) : ""}</span>` : p.work ? `<span class="away-tag work">作業中</span>` : ""}</div>`;
 	}
 	// 変わったときだけ書き換える。500msごとに作り直すと、押している最中に行が
 	// 入れ替わってクリックを取りこぼす。
