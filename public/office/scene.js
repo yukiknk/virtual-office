@@ -541,7 +541,7 @@ function drawActorLabels(a) {
 	} else if (a.work) {
 		const feet = w2s(a.x, a.y);
 		// 作業中は離席と見分けられるよう、明るい青の札に青い文字（離席は暗い灰色に白い文字）
-		drawAwayLabel(feet.x, feet.y, "", "💻 作業中", "#e2e8fb", "#1f3fb0");
+		drawAwayLabel(feet.x, feet.y, "", "作業中", "#e2e8fb", "#1f3fb0");
 	}
 	if (a.group) return;
 	const top = w2s(a.x, labelTopY(a));
