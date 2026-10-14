@@ -10,7 +10,7 @@ import { KEY, read, writeJson } from "../storage.js";
 import { connect, sendPos } from "./net.js";
 import { updateVoice, initVoiceUI } from "./voice.js";
 import { initMove, update } from "./move.js";
-import { fit, draw, initPointer, sweepExpiredComments } from "./scene.js";
+import { fit, draw, initPointer, sweepExpiredComments, drawMode } from "./scene.js";
 import {
 	initCommentUI, initLinkPrompt, initChatUI, initAwayUI, initPeopleUI, initRailToggle,
 	updateRoster, updatePeople, updateLinkPrompt, updateChat, updateChatPlaceholder, updateUsage,
@@ -32,7 +32,7 @@ function loadSheets() {
 // 毎フレーム：移動 → 位置送信 → 音声更新（間引き）→ 在室者更新 → 描画
 //
 // 間引きの基準は「呼ぶたびに DOM を作り直す関数かどうか」。
-//   間引くもの   updateVoice / updateRoster / updatePeople … 変化検知を持たない
+//   間引くもの   updateVoice / updateRoster / updatePeople … 判定の計算が重め（書き換えは変化があるときだけ）
 //   間引かないもの updateChat / updateUsage / updateCallPrompt / updateCallAlert
 //                 … 内部に「前回と同じなら即 return」のガードがある
 let lastT = 0, lastVoice = 0, lastRoster = 0, lastDraw = 0;
@@ -40,6 +40,11 @@ let lastT = 0, lastVoice = 0, lastRoster = 0, lastDraw = 0;
 // ドット絵の動きには30回で足りる。移動の計算と位置の送信は毎回行う（操作の遅れを出さない）。
 // 30ms にしているのは、60Hz の画面で2回に1回（33ms ごと）、120Hz で4回に1回になるようにするため。
 const DRAW_EVERY_MS = 30;
+// 人が動いているときは毎秒60回まで（scene.js の drawMode が "move"）。移動を滑らかに見せる。
+// 15ms にしているのは、60Hz の画面で毎回、120Hz で2回に1回になるようにするため
+const MOVE_DRAW_MS = 15;
+// 誰も動いていないときは毎秒5回まで（drawMode が "idle"）。話している印の点の動きが追える程度
+const IDLE_DRAW_MS = 200;
 function loop(t) {
 	// dt の上限は移動のワープ防止。タブから戻ったときに数秒分をまとめて
 	// 進めてしまわないよう、1フレーム 50ms 相当で頭打ちにする。
@@ -54,7 +59,9 @@ function loop(t) {
 	updateCallAlert();
 	updateChat();
 	updateUsage();
-	if (t - lastDraw >= DRAW_EVERY_MS) { lastDraw = t; draw(); }
+	const mode = drawMode();
+	const every = mode === "move" ? MOVE_DRAW_MS : mode === "fast" ? DRAW_EVERY_MS : IDLE_DRAW_MS;
+	if (t - lastDraw >= every) { lastDraw = t; draw(); }
 	requestAnimationFrame(loop);
 }
 

@@ -52,9 +52,13 @@ export function startLevelMeter(stream, onLevel) {
 	analyser.fftSize = 512;   // 約10ms分。短くすると数値が暴れ、長くすると反応が鈍る
 	ac.createMediaStreamSource(stream).connect(analyser);
 	const buf = new Float32Array(analyser.fftSize);
-	let live = true;
-	const tick = () => {
+	let live = true, last = 0;
+	const tick = (t) => {
 		if (!live) return;
+		// バーを動かすのは毎秒20回まで。画面によっては毎秒120回呼ばれ、そのたびに
+		// 画面の部品を書き換えると、マイクを開いている間ずっと CPU を使う
+		if (t - last < 50) { requestAnimationFrame(tick); return; }
+		last = t;
 		analyser.getFloatTimeDomainData(buf);
 		let sum = 0;
 		for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
