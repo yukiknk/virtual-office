@@ -94,7 +94,7 @@ Remove-Item -Recurse -Force $work
 - 圧縮に `Compress-Archive` を使わないのは、隠しフォルダの `.git` が抜けることがあるため
 - zip を作る前に、`MIGRATION.md` などの変更がコミット済みであることを確かめる（未コミットの変更も zip には入るが、履歴には残らない）
 - できた `virtual_office_<日付>.zip` を業務用 NAS へ置く
-- NAS は受け渡しのためだけに使う。NAS の上で展開して作業はしない（3-2 のとおり業務用 PC の中に展開する）
+- NAS は受け渡しのためだけに使う。NAS の上で展開して作業はしない（3-3 のとおり業務用 PC の中に展開する）
 
 ---
 
@@ -107,14 +107,81 @@ node -v           # v20 以上なら OK（wrangler が Node.js 20 以上を要�
 git --version     # 何か表示されれば OK
 ```
 
-入っていなければ入れる（入れたら PowerShell を開き直す）。インストールが制限されている場合は、情報システムの担当に依頼する。
+入っていなければ入れる。`winget` は会社の PC では使えないことが多いので、公式サイトから落とす。
+
+**A. インストーラーで入れる（管理者権限がある場合）**
+
+1. https://nodejs.org/ja/download を開き、上の「Docker を使って…」の欄ではなく、**下にスクロールした所**にある
+   「Windows インストーラー (.msi)」を落とす（「x64」になっていることを確かめる）
+2. 実行する。途中の **「Tools for Native Modules」のチェックは外す**。ほかは既定のままでよい
+   - チェックしたままだと、終わったあとに管理者の PowerShell が開き、Visual Studio などを落とそうとして
+     ネットワークのエラーを出し続ける。このアプリには不要なので、そのウィンドウは閉じてよい（Node.js 本体はもう入っている）
+3. Git が無ければ https://git-scm.com/downloads/win から落として実行。設定は既定のままでよい
+4. PowerShell を**開き直して** `node -v` を打つ
+
+`node` が「認識されません」と出るとき（入ったのに場所が登録されていない）:
 
 ```powershell
-winget install OpenJS.NodeJS.LTS
-winget install Git.Git
+Test-Path "C:\Program Files\nodejs\node.exe"     # True なら入っている。False ならもう一度インストールする
+[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path","User") + ";C:\Program Files\nodejs", "User")
 ```
 
-### 3-2. zip を展開して依存を入れる
+PowerShell を開き直して `node -v` が出れば OK。
+
+**B. 管理者権限がない場合（Node.js を zip で置く）**
+
+1. 同じページで「LTS」「Windows」「x64」の **Standalone Binary (.zip)** を落とす
+2. 展開して、中のフォルダ（`node.exe` が入っている所）を `C:\Users\<自分>\tools\node` に置く
+3. 自分のユーザーの PATH に足して、PowerShell を開き直す
+
+```powershell
+$node = "$env:USERPROFILE\tools\node"
+[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path","User") + ";$node", "User")
+```
+
+Git もない場合は、https://git-scm.com/downloads/win の **Portable** 版を同じように置いて、その中の `cmd` フォルダを PATH に足す。
+どちらも会社の決まりで入れられないときは、情報システムの担当に依頼する。
+
+**npm を使えるようにする（A・B 共通）**
+
+`npm -v` で「このシステムではスクリプトの実行が無効になっている」と出たら、自分のユーザーだけ許可する。
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned    # 聞かれたら Y
+npm -v                                                  # 番号が出れば OK
+```
+
+会社の設定で変えられないときは、以降の `npm` / `npx` を `npm.cmd` / `npx.cmd` と打つ。
+
+### 3-2. 会社のプロキシを設定する
+
+会社のネットワークがプロキシ経由だと、`npm install` が `ENOTFOUND registry.npmjs.org` で失敗する。
+先に調べて、あれば npm・wrangler・git に教える。
+
+```powershell
+Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' | Select-Object ProxyEnable, ProxyServer, AutoConfigURL
+```
+
+`ProxyEnable` が `1` で `ProxyServer` に `アドレス:ポート` が出たら、その値を `<プロキシ>` として設定する
+（`0` や空なら、このステップは飛ばす）。
+
+```powershell
+# npm 用
+npm config set proxy http://<プロキシ>
+npm config set https-proxy http://<プロキシ>
+
+# wrangler（デプロイ・ログイン）と git 用。入れたら PowerShell を開き直す
+[Environment]::SetEnvironmentVariable("HTTPS_PROXY", "http://<プロキシ>", "User")
+[Environment]::SetEnvironmentVariable("HTTP_PROXY",  "http://<プロキシ>", "User")
+[Environment]::SetEnvironmentVariable("NO_PROXY",    "localhost,127.0.0.1", "User")
+```
+
+`NO_PROXY` は、手元で動かすとき（`npm run dev`）の通信をプロキシに回さないため。
+`AutoConfigURL`（.pac）しか出ないときは、その URL をブラウザで開くと中にプロキシのアドレスが書いてある。
+プロキシが ID・パスワードを求める（`407`）場合や、証明書のエラーが出る場合は、情報システムの担当に開発ツールからの接続方法を確認する
+（パスワードを設定ファイルに書かない）。
+
+### 3-3. zip を展開して依存を入れる
 
 NAS の zip を業務用 PC にコピーし、`C:\virtual_office` に展開する。
 作業は必ずこの PC の中のフォルダで行う。NAS の上で直接作業すると、`npm install`（数万ファイル）や git が遅く、
@@ -123,12 +190,36 @@ NAS の zip を業務用 PC にコピーし、`C:\virtual_office` に展開す�
 ```powershell
 cd C:\virtual_office
 npm install
-git status          # 履歴が見えること、変更が無いことを確かめる
+git status          # 履歴が見えることを確かめる
 ```
 
 `npm install` で `wrangler` と `sharp`（アバター画像の切り出し）が、その PC 用に入る。
 
-### 3-3. 組織の GitHub に非公開リポジトリを作って登録する
+最後に `install-scripts ... not yet covered by allowScripts` と出て esbuild と workerd が並んだら、
+それは wrangler が使う部品の準備スクリプトが止められている。許可して実行し直す。
+
+```powershell
+npm install-scripts approve esbuild workerd
+npm rebuild esbuild workerd
+npx wrangler --version      # 4.x.x のような番号が出れば OK
+```
+
+`high severity vulnerabilities` の警告は開発用の道具の中の話なので放っておいてよい。`npm audit fix --force` はしない
+（wrangler の版が変わって動かなくなることがある）。
+
+`git status` で `BETA.md` や `MIGRATION.md` などが「変更あり」と出たら、zip を作ったときに未コミットの変更が入っていた。
+業務用 PC ではコミットしない。個人 PC でコミット・プッシュを済ませてから、業務用 PC を最新にそろえる
+（3-4 で組織に送るのはこの PC の履歴なので、古いままだと最後のコミットが抜ける）。
+
+```powershell
+git restore .          # zip に入っていた未コミットの変更を捨てる（同じものが個人 PC でコミット済みのこと）
+git pull               # 個人リポジトリから最新を取る（公開済みならログイン不要）
+git log --oneline -1   # 個人 PC の最後のコミットと同じか確かめる
+```
+
+個人リポジトリがまだ非公開で `git pull` がログインを求めるときは、個人 PC で zip を作り直して 3-3 からやり直すほうが早い。
+
+### 3-4. 組織の GitHub に非公開リポジトリを作って登録する
 
 1. 組織の GitHub で、空の**非公開**リポジトリを作る（README などは作らない）
 2. zip の中のリポジトリは、送り先が個人リポジトリになっている。組織のリポジトリに付け替えて、ブランチとタグをすべて送る
@@ -143,7 +234,7 @@ git push origin --tags
 
 以降の `git push` は組織のリポジトリへ行く。
 
-### 3-4. `.dev.vars`
+### 3-5. `.dev.vars`
 
 `.dev.vars.example` をコピーして `.dev.vars` にする。中身は 4-3 で取得した値（ローカルで動かすときだけ使う）。
 
@@ -390,6 +481,12 @@ Cloudflare 側の都合で、部屋（Durable Object）が数時間おきに作�
 | 症状 | 原因と対処 |
 |---|---|
 | `node` / `git` が見つからない | PowerShell を開き直す |
+| `node` は入っている（`C:\Program Files\nodejs\node.exe` がある）のに見つからない | ユーザーの PATH に `C:\Program Files\nodejs` を足して開き直す（3-1 の A の最後） |
+| `npm install` で `ENOTFOUND registry.npmjs.org` | 会社のプロキシ経由になっている。`Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' \| Select-Object ProxyServer` で値を調べ、`npm config set proxy http://<値>` と `npm config set https-proxy http://<値>`。wrangler と git 用にユーザー環境変数 `HTTPS_PROXY` / `HTTP_PROXY` にも同じ値、`NO_PROXY` に `localhost,127.0.0.1` を入れて開き直す |
+| `npm install` のあとに `install-scripts ... not yet covered by allowScripts`（esbuild、workerd） | `npm install-scripts approve esbuild workerd` のあと `npm rebuild esbuild workerd`。`npx wrangler --version` で番号が出れば OK |
+| `npm install` で `high severity vulnerabilities` | 開発用の道具の警告。`npm audit fix --force` はしない（wrangler の版が変わって動かなくなることがある） |
+| 3-4 の `git push` が `[rejected] main -> main (fetch first)` | 組織のリポジトリを作るときに README などを作ってしまい、空でない。`git fetch origin` と `git log origin/main --oneline` で中身が自動の最初のコミットだけと確かめてから `git push -u origin main --force`（または GitHub でリポジトリを空で作り直す） |
+| `npm` で「スクリプトの実行が無効」 | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`。会社の設定で変えられないときは `npm.cmd` / `npx.cmd` と打つ |
 | デプロイ先のアカウントが違う | `npx wrangler whoami` で確かめる。`$env:CLOUDFLARE_ACCOUNT_ID` で固定する |
 | URL のサブドメインが意図と違う | 4-2 の前にデプロイした。ダッシュボードで変更する（全 URL が変わる） |
 | URL の最初の部分が `virtual-office` のまま | 4-5 の `name` を書き替える前にデプロイした。書き替えてデプロイし直すと別の Worker ができるので、マップの書き込みとシークレットの登録をやり直し、古いほうは `npx wrangler delete --name virtual-office` で消す |
