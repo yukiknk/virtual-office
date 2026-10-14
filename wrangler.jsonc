@@ -54,6 +54,17 @@
 	// main / assets / compatibility_date / migrations は継承されます。
 	"env": {
 		"beta": {
+			// 毎日 3:00（日本時間）に、本番のマップをベータへ写す（src/index.js の scheduled）。
+			// 本番の Worker へは services の PROD でつなぐ（読み出しだけ）。BETA.md の「本番のマップを毎日写す」
+			"triggers": {
+				"crons": ["0 18 * * *"]
+			},
+			"services": [
+				{
+					"binding": "PROD",
+					"service": "virtual-office"
+				}
+			],
 			"kv_namespaces": [
 				{
 					"binding": "LAYOUT_KV",

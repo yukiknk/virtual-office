@@ -146,3 +146,33 @@ npx wrangler deploy --env beta --var SCREEN_OFF_GB:0.001 --var VOICE_OFF_GB:0.00
 npm run deploy:beta
 ```
 
+---
+
+## 本番のマップを毎日写す（ベータを本番の控えにする）
+
+ベータは毎日 3:00（日本時間）に、本番のマップ（レイアウト・会話エリア・家具・管理者の看板）を自分へ写す。
+試す場所であると同時に、本番のマップの1日遅れの控えにもなる。
+
+- 仕組み: `wrangler.jsonc` の `env.beta` の `triggers`（毎日の起動）と `services`（本番の Worker への接続 `PROD`）。
+  中身は `src/index.js` の `syncFromProd`。本番には何も書かない（読むだけ）
+- 写さないもの: Slack の通知先（ベータから本番のチャンネルへ通知が流れないように）、オフィスで作った看板、転送量
+- 本番の値が空（何も無い）のときは、そのキーは写さない（本番を誤って消したときに、控えまで消えないように）
+- ベータで編集したマップは、次の 3:00 に本番の内容で上書きされる。ベータで試したレイアウトを残したいときは、先に書き出しておく（`npm run layout:export -- <ベータのURL>`）
+
+すぐ写したいとき（デプロイ直後の確認など）:
+
+```powershell
+Invoke-RestMethod -Method Post https://virtual-office-beta.<サブドメイン>.workers.dev/api/sync-from-prod
+```
+
+前回の同期の結果を見る: ブラウザで `https://virtual-office-beta.<サブドメイン>.workers.dev/api/sync-from-prod` を開く。
+
+### 本番のマップをベータの控えから戻す
+
+本番のマップを誤って壊したときは、**次の 3:00 の同期より前に**、ベータから本番へ書き戻す:
+
+```powershell
+npm run layout:export -- https://virtual-office-beta.<サブドメイン>.workers.dev
+npm run layout:import -- https://virtual-office.<サブドメイン>.workers.dev layout-backup-<日付>
+```
+

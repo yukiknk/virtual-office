@@ -230,6 +230,10 @@ npm run deploy:beta
 npm run layout:import -- https://virtual-office-beta.<サブドメイン>.workers.dev layout-backup-<日付>
 ```
 
+- ベータは本番の Worker（`virtual-office`）につないで毎日マップを写す（`BETA.md` の「本番のマップを毎日写す」）。
+  新しいアカウントにまだ本番が無いと、ベータのデプロイで `virtual-office` が見つからないと言われることがある。
+  その場合は、先に `npm run deploy` で本番を出してから（まだ URL を周知していないので、誰も使っていない）ベータを出す
+
 ベータの URL を開き、次を確かめる（PC のブラウザを2つ、またはPCとスマホで2人分入る）。
 
 | # | 確かめること | 見るところ |
