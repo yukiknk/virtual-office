@@ -311,6 +311,7 @@ export class Room {
     else if (msg.t === "pos") this.onPos(ws, att, msg);
     else if (msg.t === "talk") this.onTalk(ws, att, msg);
     else if (msg.t === "mic") this.onMic(ws, att, msg);
+    else if (msg.t === "work") this.onWork(ws, att, msg);
     else if (msg.t === "clienterr") await this.onClientErr(att, msg);
     else if (msg.t === "publish") this.onPublish(ws, att, msg);
     else if (msg.t === "unpublish") this.onUnpublish(ws, att, msg);
@@ -526,6 +527,15 @@ export class Room {
     this.schedule();
   }
 
+  // 作業中か（オフィスの画面から目を離しているか）の申告。アバターを薄くするために配る。
+  onWork(ws, att, msg) {
+    const next = !!msg.on;
+    if (next === !!att.work) return;
+    att.work = next;
+    ws.serializeAttachment(att);
+    this.schedule();
+  }
+
   // 送信の取り下げ。kind 指定が無ければ音声も画面も取り下げる。
   onUnpublish(ws, att, msg) {
     if (msg.kind === "screen") { att.screenTrack = undefined; att.screenSessionId = undefined; }
@@ -564,6 +574,7 @@ export class Room {
     att.name = "";
     att.talk = false;
     att.mic = false;
+    att.work = false;
     att.audioTrack = att.screenTrack = att.screenSessionId = undefined;
     try { ws.serializeAttachment(att); } catch { }   // 閉じた接続では書けないことがある
   }
@@ -630,6 +641,7 @@ export class Room {
       if (att.away) { user.away = true; if (att.awayMsg) user.awayMsg = att.awayMsg; }
       else if (att.talk && att.audioTrack) user.talk = true;
       if (!att.away && att.mic && att.audioTrack) user.mic = true;
+      if (!att.away && att.work) user.work = true;   // 離席中は離席の表示を優先する
       if (att.sfuSessionId && (att.audioTrack || att.screenTrack)) {
         user.sfu = { sessionId: att.sfuSessionId };
         if (att.audioTrack) user.sfu.audio = att.audioTrack;

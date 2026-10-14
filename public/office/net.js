@@ -102,6 +102,7 @@ function onWelcome(msg) {
 	applyBudgetInfo(msg.budget);
 	onServerJoined(!!msg.resumed);
 	if (store.me.away) sendAway(true, store.me.awayMsg);   // 再接続時に離席状態を送り直す
+	if (store.me.working) sendWork(true);                  // 作業中も送り直す（サーバーは覚えていない）
 }
 
 // 転送量レベルの反映。welcome の中（msg.budget）と budget メッセージ（msg 自身）で
@@ -129,6 +130,7 @@ function onState(msg) {
 		o.awayMsg = u.awayMsg || "";
 		o.talk = !!u.talk;   // 話しているか（アバターに吹き出しを出す）
 		o.mic = !!u.mic;     // マイクが ON か（名前ラベルに印を出す）
+		o.work = !!u.work;   // 作業中か（アバターを薄くし、足元に「作業中」）
 		if (u.avatar) o.avatar = u.avatar;   // 未設定の人の情報で既存の値を消さない
 		// 位置が変わった人がいれば、絵を毎秒30回に戻す（scene.js の drawMode）
 		const prev = o.buf[o.buf.length - 1];
@@ -201,6 +203,7 @@ export const sendComment = (comment) => send({ t: "comment_add", comment });   /
 export const removeComment = (id) => send({ t: "comment_remove", id });
 export const sendChat = (text, img) => send(img ? { t: "chat", text, img } : { t: "chat", text });              // サーバーがエリア内・近接の人へ配信
 export const sendAway = (away, msg) => send({ t: "away", away, msg });
+export const sendWork = (on) => send({ t: "work", on });                    // 作業中か（presence.js）
 
 // 位置送信（動いていれば約15回/秒、止まっていても2秒ごと）。
 // 止まっていても送り続けるのは、サーバー側の生存確認を兼ねるため。

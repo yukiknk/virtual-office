@@ -365,9 +365,9 @@ function drawWallsAndActors() {
 			if (Math.hypot(dx, dy) > 1) { moving = true; o.dir = faceDir(dx, dy); }
 		}
 		// 話している人はマイクが ON のはず。マイクの状態を送らない古い画面の人も、話していれば ON と見せる
-		actors.push({ id, x: p.x, y: p.y, name: o.name, color: "#b23a2a", away: o.away, awayMsg: o.awayMsg, talk: o.talk, mic: !!(o.mic || o.talk), dir: o.dir || "down", moving, avatar: o.avatar || DEFAULT_AVATAR });
+		actors.push({ id, x: p.x, y: p.y, name: o.name, color: "#b23a2a", away: o.away, awayMsg: o.awayMsg, work: !o.away && o.work, talk: o.talk, mic: !!(o.mic || o.talk), dir: o.dir || "down", moving, avatar: o.avatar || DEFAULT_AVATAR });
 	}
-	actors.push({ x: store.me.x, y: store.me.y, name: store.me.name, color: "#1f3fb0", away: store.me.away, awayMsg: store.me.awayMsg, talk: store.me.talking, mic: !!store.me.mic, dir: store.me.dir, moving: store.me.moving, avatar: store.me.avatar });
+	actors.push({ x: store.me.x, y: store.me.y, name: store.me.name, color: "#1f3fb0", away: store.me.away, awayMsg: store.me.awayMsg, work: !store.me.away && store.me.working, talk: store.me.talking, mic: !!store.me.mic, dir: store.me.dir, moving: store.me.moving, avatar: store.me.avatar });
 	actors.sort((a, b) => a.y - b.y);   // 南（下）にいる人ほど後に描く＝手前になる
 	lastActors = actors;
 	lastGroups = groupActors(actors);
@@ -514,7 +514,7 @@ function drawActor(wx, wy, name, color, opt = {}) {
 		const wl = wx - DRAW_W / 2, wt = wy - DRAW_H + 6;   // 足元を(wx,wy)付近に、上へ立たせる
 		const r = snapRect(wl, wt, DRAW_W, DRAW_H);
 		ctx.save();
-		if (opt.away) ctx.globalAlpha = 0.4;   // 離席中は薄く描く
+		if (opt.away) ctx.globalAlpha = 0.4;   // 離席中は薄く描く（作業中は薄くしない。声をかけてよい人に見せるため）
 		drawAvatar(ctx, cfg, { dir: opt.dir || "down", frame, dx: r.x, dy: r.y, dw: r.w, dh: r.h });
 		ctx.restore();
 	} else {
@@ -538,6 +538,10 @@ function drawActorLabels(a) {
 	if (a.away) {
 		const feet = w2s(a.x, a.y);
 		drawAwayLabel(feet.x, feet.y, a.awayMsg);
+	} else if (a.work) {
+		const feet = w2s(a.x, a.y);
+		// 作業中は離席と見分けられるよう、明るい青の札に青い文字（離席は暗い灰色に白い文字）
+		drawAwayLabel(feet.x, feet.y, "", "作業中", "#e2e8fb", "#1f3fb0");
 	}
 	if (a.group) return;
 	const top = w2s(a.x, labelTopY(a));
@@ -751,7 +755,8 @@ function drawPillAt(cx, cy, name, color, away, talking, mic) {
 }
 
 // 離席バッジ＋理由をアバターの下に表示
-function drawAwayLabel(sx, sy, msg) {
+// 足元の札。ふだんは「離席中：理由」。作業中は title・背景・文字の色を変えて使う（drawActorLabels）
+function drawAwayLabel(sx, sy, msg, title = "離席中", bg = "#4a5046", fg = "#fff") {
 	ctx.save();
 	ctx.font = `600 ${u(11)}px ${LABEL_FAMILY}`;
 	ctx.textAlign = "center";
@@ -762,7 +767,7 @@ function drawAwayLabel(sx, sy, msg) {
 	const maxW = u(220);
 	const lines = [];
 	let line = "";
-	for (const ch of "離席中" + (msg ? "：" + msg : "")) {
+	for (const ch of title + (msg ? "：" + msg : "")) {
 		if (ch === "\n") { lines.push(line); line = ""; continue; }
 		// 句読点や閉じかっこは行の先頭に送らない（少しはみ出しても前の行に付ける）
 		if (line && !"、。，．）」』】！？".includes(ch) && ctx.measureText(line + ch).width > maxW) { lines.push(line); line = ch; }
@@ -782,13 +787,13 @@ function drawAwayLabel(sx, sy, msg) {
 	ctx.shadowOffsetY = 1;
 	ctx.beginPath();
 	ctx.roundRect(cx - w / 2, top, w, h, Math.min(h / 2, u(9)));
-	ctx.fillStyle = "#4a5046";
+	ctx.fillStyle = bg;
 	ctx.fill();
 	// 文字に枠と同じ影が付かないよう、描く前に影を消す
 	ctx.shadowColor = "transparent";
 	ctx.shadowBlur = 0;
 	ctx.shadowOffsetY = 0;
-	ctx.fillStyle = "#fff";
+	ctx.fillStyle = fg;
 	lines.forEach((l, k) => ctx.fillText(l, cx, top + u(1.5) + lineH * (k + 0.5) + 0.5));
 	ctx.restore();
 }

@@ -701,6 +701,10 @@ textarea {
 }
 
 /* 離席の印と理由。理由は最長100文字あるので、収まらないぶんは「…」で切る */
+.person-row .away-tag.work {
+	color: #1f3fb0;   /* 離席（赤）と見分けられる青 */
+}
+
 .person-row .away-tag {
 	min-width: 0;
 	overflow: hidden;
